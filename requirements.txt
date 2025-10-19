@@ -4,3 +4,4 @@ psycopg2-binary
 pandas
 google-api-python-client
 python-dotenv
+google-generativeai
