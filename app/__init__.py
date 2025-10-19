@@ -10,7 +10,11 @@ def create_app():
 
     # **SOLUTION for TemplateNotFound**: __name__ se Flask ko pata chalta hai ki
     # templates aur static folder isi 'app' directory ke andar hain.
-    app = Flask(__name__, instance_relative_config=True)
+    # Humne ise aur spasht kar diya hai.
+    app = Flask(__name__, 
+                instance_relative_config=True,
+                template_folder='templates',
+                static_folder='static')
     
     # Secret key set karein (flash messages ke liye zaroori)
     app.config.from_mapping(
