@@ -2,6 +2,8 @@ import os
 import pandas as pd
 from flask import Flask, render_template, request, redirect, url_for, send_file, flash, jsonify
 from dotenv import load_dotenv
+# --- SOLUTION: Import the entire youtube_logic module ---
+import youtube_logic 
 from youtube_logic import init_db, find_channels, get_db_connection
 import io
 from datetime import datetime, timedelta
@@ -27,6 +29,7 @@ def search():
         min_subs = int(request.form.get('min_subs', 0))
         max_subs = int(request.form.get('max_subs', 1000000))
         max_channels = int(request.form.get('max_channels', 100))
+        # Naya checkbox value
         require_contact = 'require_contact' in request.form
         
         if not all([category, start_date]) or min_subs is None or max_subs is None or max_channels is None:
