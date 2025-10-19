@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTubers Data Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f0f2f5; }
+        .container { max-width: 1400px; margin: 20px auto; padding: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1, h2 { color: #1c1e21; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; align-items: end; }
+        label { font-weight: 600; font-size: 0.9em; color: #606770; }
+        input, select, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #dddfe2; box-sizing: border-box; }
+        button { background-color: #1877f2; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #166fe5; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; border-bottom: 1px solid #dddfe2; text-align: left; font-size: 0.9em; }
+        th { background-color: #f5f6f7; color: #606770; }
+        .flash { padding: 15px; margin-bottom: 20px; border-radius: 6px; }
+        .flash.success { background-color: #e9f6ec; color: #0f5132; }
+        .flash.error { background-color: #f8d7da; color: #842029; }
+        .actions { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTubers Data Tool</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="panel">
+            <h2>Control Panel</h2>
+            <form action="/search" method="post">
+                <div class="form-grid">
+                    <div>
+                        <label for="category">Category:</label>
+                        <select id="category" name="category">
+                            <option value="Technology">Technology</option>
+                            <option value="Gaming">Gaming</option>
+                            <option value="Finance">Finance</option>
+                            <option value="Education">Education</option>
+                            <option value="Comedy">Comedy</option>
+                            <option value="Vlogging">Vlogging</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="start_date">Channels created after:</label>
+                        <input type="date" id="start_date" name="start_date" value="{{ default_date }}">
+                    </div>
+                    <div>
+                        <label for="min_subs">Min Subscribers:</label>
+                        <input type="number" id="min_subs" name="min_subs" value="1000">
+                    </div>
+                    <div>
+                        <label for="max_subs">Max Subscribers:</label>
+                        <input type="number" id="max_subs" name="max_subs" value="50000">
+                    </div>
+                    <div>
+                        <label for="max_channels">Max new channels to find:</label>
+                        <input type="number" id="max_channels" name="max_channels" value="50">
+                    </div>
+                    <div>
+                        <button type="submit">Start Search</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="panel">
+            <div class="actions">
+                <h2>Found Channels ({{ channel_count }})</h2>
+                <a href="/download" style="margin-left: auto;"><button>Export to Excel</button></a>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Channel Name</th>
+                        <th>Subscribers</th>
+                        <th>Category</th>
+                        <th>Emails</th>
+                        <th>Created On</th>
+                        <th>AI Summary</th>
+                        <th>AI Tone</th>
+                        <th>AI Audience</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for channel in channels %}
+                    <tr>
+                        <td>{{ channel[0] }}</td>
+                        <td>{{ channel[1] }}</td>
+                        <td>{{ channel[2] }}</td>
+                        <td>{{ channel[3] }}</td>
+                        <td>{{ channel[4] }}</td>
+                        <td>{{ channel[5] }}</td>
+                        <td>{{ channel[6] }}</td>
+                        <td>{{ channel[7] }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" style="text-align: center;">No channels found in the database yet. Start a new search!</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+
