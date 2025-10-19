@@ -2,15 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - YouTubers Data Tool</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f0f2f5; }
-        .container { max-width: 95%; margin: 20px auto; padding: 20px; }
-        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .container { max-width: 98%; margin: 20px auto; padding: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
         h1 { color: #1c1e21; }
-        .actions { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
-        button, .button-link { background-color: #1877f2; color: white; border: none; cursor: pointer; font-weight: bold; padding: 10px 15px; border-radius: 6px; text-decoration: none; }
+        .top-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 15px; }
+        .top-controls > div { flex-grow: 1; min-width: 150px; }
+        .top-controls label { font-weight: 600; font-size: 0.9em; color: #606770; display: block; margin-bottom: 5px; }
+        .top-controls input, .top-controls select, .top-controls button { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #dddfe2; box-sizing: border-box; }
+        button, .button-link { background-color: #1877f2; color: white; border: none; cursor: pointer; font-weight: bold; padding: 10px 15px; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+        button:hover, .button-link:hover { background-color: #166fe5; }
+
         .table-container { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px 15px; border-bottom: 1px solid #dddfe2; text-align: left; font-size: 0.9em; white-space: nowrap; }
@@ -18,16 +23,20 @@
         .status-select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
         .flash { padding: 15px; margin-bottom: 20px; border-radius: 6px; }
         .flash.success { background-color: #e9f6ec; color: #0f5132; }
+        .flash.error { background-color: #f8d7da; color: #842029; }
+        .social-link { color: #1877f2; text-decoration: underline; }
+        .social-link:hover { color: #166fe5; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="panel">
-            <div class="actions">
+            <div class="top-controls">
                 <h1>Found Channels ({{ channel_count }})</h1>
-                <a href="/" class="button-link" style="margin-left: auto;">New Search</a>
+                <a href="/" class="button-link">New Search</a>
                 <a href="/download" class="button-link">Export to Excel</a>
             </div>
+
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
@@ -35,20 +44,80 @@
                     {% endfor %}
                 {% endif %}
             {% endwith %}
+
+            <!-- **NEW**: Filtering and Sorting Controls -->
+            <div class="panel" style="margin-bottom: 20px;">
+                <form id="filterSortForm" action="{{ url_for('results') }}" method="get">
+                    <div class="form-grid">
+                        <div>
+                            <label for="sort_by">Sort By:</label>
+                            <select id="sort_by" name="sort_by" onchange="document.getElementById('filterSortForm').submit()">
+                                <option value="retrieved_at" {% if current_sort_by == 'retrieved_at' %}selected{% endif %}>Last Retrieved</option>
+                                <option value="subscriber_count" {% if current_sort_by == 'subscriber_count' %}selected{% endif %}>Subscribers</option>
+                                <option value="category" {% if current_sort_by == 'category' %}selected{% endif %}>Category</option>
+                                <option value="creation_date" {% if current_sort_by == 'creation_date' %}selected{% endif %}>Creation Date</option>
+                                <option value="short_videos_count" {% if current_sort_by == 'short_videos_count' %}selected{% endif %}>Shorts Count</option>
+                                <option value="long_videos_count" {% if current_sort_by == 'long_videos_count' %}selected{% endif %}>Long Videos Count</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="sort_order">Order:</label>
+                            <select id="sort_order" name="sort_order" onchange="document.getElementById('filterSortForm').submit()">
+                                <option value="DESC" {% if current_sort_order == 'DESC' %}selected{% endif %}>Descending</option>
+                                <option value="ASC" {% if current_sort_order == 'ASC' %}selected{% endif %}>Ascending</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="category_filter">Filter by Category:</label>
+                            <select id="category_filter" name="category_filter" onchange="document.getElementById('filterSortForm').submit()">
+                                <option value="">All Categories</option>
+                                {% for cat in all_categories %}
+                                    <option value="{{ cat }}" {% if current_filter_category == cat %}selected{% endif %}>{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="query">Search (Name/Email/Desc):</label>
+                            <input type="text" id="query" name="query" value="{{ current_search_query }}" onkeyup="submitFilterDelayed()">
+                        </div>
+                        <div>
+                            <button type="submit">Apply Filter</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
-                            <th>Channel Name</th><th>Subs</th><th>Category</th><th>Emails</th><th>Phones</th>
-                            <th>Instagram</th><th>Twitter</th><th>LinkedIn</th><th>Status</th>
+                            <th>Channel Name</th>
+                            <th>Subs</th>
+                            <th>Category</th>
+                            <th>Emails</th>
+                            <th>Phones</th>
+                            <th>Shorts</th>
+                            <th>Long Videos</th>
+                            <th>Instagram</th>
+                            <th>Twitter</th>
+                            <th>LinkedIn</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for channel in channels %}
                         <tr data-channel-id="{{ channel[0] }}">
-                            <td>{{ channel[1] }}</td><td>{{ channel[2] }}</td><td>{{ channel[3] }}</td><td>{{ channel[4] }}</td>
-                            <td>{{ channel[5] }}</td><td>{{ channel[6] or 'N/A' }}</td><td>{{ channel[7] or 'N/A' }}</td>
-                            <td>{{ channel[8] or 'N/A' }}</td>
+                            <td>{{ channel[1] }}</td>
+                            <td>{{ channel[2] }}</td>
+                            <td>{{ channel[3] }}</td>
+                            <td>{{ channel[4] }}</td>
+                            <td>{{ channel[5] }}</td>
+                            <td>{{ channel[10] }}</td> <!-- Shorts Count -->
+                            <td>{{ channel[11] }}</td> <!-- Long Videos Count -->
+                            <td>{% if channel[6] %}<a href="{{ channel[6] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
+                            <td>{% if channel[7] %}<a href="{{ channel[7] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
+                            <td>{% if channel[8] %}<a href="{{ channel[8] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
                             <td>
                                 <select class="status-select" onchange="updateStatus(this)">
                                     <option value="New" {% if channel[9] == 'New' %}selected{% endif %}>New</option>
@@ -60,7 +129,7 @@
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="9" style="text-align: center;">No data found.</td></tr>
+                        <tr><td colspan="11" style="text-align: center;">No data found. Start a new search!</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -68,6 +137,14 @@
         </div>
     </div>
     <script>
+        let filterTimeout;
+        function submitFilterDelayed() {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                document.getElementById('filterSortForm').submit();
+            }, 500); // 500ms delay after typing stops
+        }
+
         function updateStatus(selectElement) {
             const newStatus = selectElement.value;
             const row = selectElement.closest('tr');
@@ -81,9 +158,11 @@
             .then(data => {
                 if (data.success) { row.style.backgroundColor = '#e9f6ec'; setTimeout(() => { row.style.backgroundColor = ''; }, 1000); } 
                 else { alert('Status update failed'); }
-            });
+            })
+            .catch(error => { console.error('Error:', error); alert('An error occurred while updating status.'); });
         }
     </script>
 </body>
 </html>
+
 
