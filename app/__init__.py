@@ -22,6 +22,7 @@ def create_app():
     )
 
     # Database ko app ke sath initialize karein
+    # Isse pehle ki routes register ho, services import karein
     from .services import youtube_service
     with app.app_context():
         youtube_service.init_db()
