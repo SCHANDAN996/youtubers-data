@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Results</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1200px; margin: auto; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #f2f2f2; }
+        a { text-decoration: none; padding: 10px 15px; background-color: #28a745; color: white; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Found Channels ({{ channel_count }})</h1>
+    <p><a href="/download">Download Data as CSV</a> | <a href="/">New Search</a></p>
+    <table>
+        <thead>
+            <tr>
+                <th>Channel Name</th>
+                <th>Subscribers</th>
+                <th>Emails</th>
+                <th>Phone Numbers</th>
+                <th>Creation Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for channel in channels %}
+            <tr>
+                <td>{{ channel[0] }}</td>
+                <td>{{ channel[1] }}</td>
+                <td>{{ channel[2] }}</td>
+                <td>{{ channel[3] }}</td>
+                <td>{{ channel[4] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
