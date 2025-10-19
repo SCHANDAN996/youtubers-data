@@ -38,7 +38,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
-    # Adding new columns for AI Analysis
+    # Adding new columns for AI Analysis and a status column
     cur.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             id SERIAL PRIMARY KEY,
@@ -53,9 +53,21 @@ def init_db():
             category VARCHAR(100),
             ai_summary TEXT,
             ai_tone VARCHAR(100),
-            ai_audience TEXT
+            ai_audience TEXT,
+            status VARCHAR(50) DEFAULT 'New' 
         );
     ''')
+    # Add a function to safely add columns if they don't exist
+    columns_to_add = {
+        'category': 'VARCHAR(100)', 'ai_summary': 'TEXT', 'ai_tone': 'VARCHAR(100)',
+        'ai_audience': 'TEXT', 'status': "VARCHAR(50) DEFAULT 'New'"
+    }
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='channels';")
+    existing_columns = [row[0] for row in cur.fetchall()]
+    for col, col_type in columns_to_add.items():
+        if col not in existing_columns:
+            cur.execute(f"ALTER TABLE channels ADD COLUMN {col} {col_type};")
+
     conn.commit()
     cur.close()
     conn.close()
@@ -69,18 +81,24 @@ def analyze_channel_with_ai(description):
         
         Description: "{description}"
         
-        Format your response exactly as follows:
+        Format your response exactly as follows, with each item on a new line:
         Summary: [Your one-sentence summary]
         Tone: [The primary tone]
         Audience: [The target audience]
         """
         response = model.generate_content(prompt)
         
-        summary = re.search(r"Summary: (.*)", response.text).group(1)
-        tone = re.search(r"Tone: (.*)", response.text).group(1)
-        audience = re.search(r"Audience: (.*)", response.text).group(1)
+        # **IMPROVEMENT**: Robust parsing of AI response
+        text = response.text
+        summary_match = re.search(r"Summary: (.*)", text, re.IGNORECASE)
+        tone_match = re.search(r"Tone: (.*)", text, re.IGNORECASE)
+        audience_match = re.search(r"Audience: (.*)", text, re.IGNORECASE)
         
-        return summary.strip(), tone.strip(), audience.strip()
+        summary = summary_match.group(1).strip() if summary_match else "Could not determine"
+        tone = tone_match.group(1).strip() if tone_match else "N/A"
+        audience = audience_match.group(1).strip() if audience_match else "N/A"
+        
+        return summary, tone, audience
     except Exception as e:
         print(f"AI analysis failed: {e}")
         return "AI analysis failed.", "N/A", "N/A"
@@ -114,20 +132,30 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit):
                 channel_ids_from_search = [item['snippet']['channelId'] for item in search_response.get('items', [])]
                 if not channel_ids_from_search: break
 
-                cur.execute("SELECT channel_id FROM channels WHERE channel_id = ANY(%s)", (channel_ids_from_search,))
-                existing_ids = {row[0] for row in cur.fetchall()}
-                new_ids_to_fetch = [cid for cid in channel_ids_from_search if cid not in existing_ids]
-
-                if not new_ids_to_fetch:
-                    next_page_token = search_response.get('nextPageToken')
-                    if not next_page_token: break
-                    continue
-
-                channel_details_request = get_youtube_service().channels().list(part="snippet,statistics", id=",".join(new_ids_to_fetch))
+                # We can fetch all details and decide to INSERT or UPDATE later
+                channel_details_request = get_youtube_service().channels().list(part="snippet,statistics", id=",".join(channel_ids_from_search))
                 channel_details_response = channel_details_request.execute()
 
                 for item in channel_details_response.get('items', []):
+                    # Check if we should stop before processing
+                    cur.execute("SELECT EXISTS(SELECT 1 FROM channels WHERE channel_id=%s)", (item['id'],))
+                    is_existing = cur.fetchone()[0]
+                    if is_existing:
+                        # **IMPROVEMENT**: Logic to update existing record
+                        stats = item.get('statistics', {})
+                        subscriber_count = int(stats.get('subscriberCount', 0))
+                        cur.execute(
+                            """
+                            UPDATE channels SET subscriber_count = %s, retrieved_at = CURRENT_TIMESTAMP 
+                            WHERE channel_id = %s
+                            """,
+                            (subscriber_count, item['id'])
+                        )
+                        print(f"Updated channel: {item['snippet']['title']}")
+                        continue # Move to the next item
+
                     if new_channels_found >= max_channels_limit: break
+
                     stats = item.get('statistics', {})
                     if not stats.get('hiddenSubscriberCount', False):
                         subscriber_count = int(stats.get('subscriberCount', 0))
@@ -144,17 +172,17 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit):
                                 "emails": emails, "phone_numbers": phones, "description": description, "category": category,
                                 "ai_summary": ai_summary, "ai_tone": ai_tone, "ai_audience": ai_audience
                             }
+                            # This now only runs for brand new channels
                             cur.execute(
                                 """
                                 INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category, ai_summary, ai_tone, ai_audience)
                                 VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s, %(ai_summary)s, %(ai_tone)s, %(ai_audience)s)
-                                ON CONFLICT (channel_id) DO NOTHING;
                                 """,
                                 channel_info
                             )
                             new_channels_found += 1
                 
-                conn.commit()
+                conn.commit() # Commit after each page of results
                 next_page_token = search_response.get('nextPageToken')
                 if not next_page_token: break
         
