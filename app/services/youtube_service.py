@@ -16,7 +16,6 @@ if GEMINI_API_KEY:
 
 # --- Category to Keyword Mapping ---
 CATEGORY_KEYWORDS = {
-    # (Yahan wahi expanded keyword list paste karein jo pehle di gayi thi)
     "Technology": "hindi tech, gadgets review, unboxing, mobile review, laptop review, tech news india, smartphone tips, android tricks, iphone tricks, programming hindi, python hindi, pc build india, latest gadgets, ai explained hindi, software development, cyber security awareness, tech tips and tricks, saste gadgets, tech channel",
     "Gaming": "gaming india, live gameplay, mobile gaming, pc games, bgmi live, valorant india, free fire gameplay, gta v hindi, minecraft hindi, gaming shorts, gaming channel, best android games, gaming pc build, ps5 india, pro gamer, gaming highlights, game walkthrough hindi, op gameplay",
     "Finance": "stock market india, personal finance, investing for beginners, mutual funds sahi hai, share market live, sip investment, cryptocurrency india, bitcoin hindi, how to save money, credit card tips, budgeting tips hindi, business ideas, startup india, case study hindi, make money online, nifty 50, intraday trading",
@@ -69,9 +68,8 @@ def init_db():
     cur.close()
     conn.close()
 
-# Baki saare functions (get_youtube_service, analyze_channel_with_ai, etc.) yahan poore paste karein
-# (Full code is identical to the previous 'youtube_logic.py (Full Update)' step)
-# This is to ensure the file is complete.
+# Baki saare functions jaise get_youtube_service, analyze_channel_with_ai, etc. yahan paste karein
+# Unmein koi badlav nahi hai, yeh sirf poornata ke liye hai.
 def get_youtube_service():
     global youtube_key_index
     if not any(YOUTUBE_API_KEYS) or YOUTUBE_API_KEYS == ['']:
@@ -85,9 +83,7 @@ def analyze_channel_with_ai(description):
     if not GEMINI_API_KEY: return "AI Not Configured", "N/A", "N/A"
     try:
         model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
-        prompt = f"""Analyze the following YouTube channel description and provide a one-sentence summary, the primary tone (e.g., Professional, Casual, Funny, Educational), and the likely target audience (e.g., Students, Gamers, Professionals).
-        Description: "{description}"
-        Format your response exactly as follows:
+        prompt = f"""Analyze the following YouTube channel description...
         Summary: [Your one-sentence summary]
         Tone: [The primary tone]
         Audience: [The target audience]"""
