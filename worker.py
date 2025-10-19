@@ -21,7 +21,6 @@ def process_jobs():
             cur = conn.cursor()
             
             # Ek 'pending' job ko select karo aur use 'running' mark karo
-            # FOR UPDATE SKIP LOCKED isliye taki agar future mein multiple workers ho, to woh ek hi job na uthayein
             cur.execute("""
                 UPDATE jobs
                 SET status = 'running', started_at = CURRENT_TIMESTAMP
@@ -63,8 +62,11 @@ def process_jobs():
         except Exception as e:
             print(f"Worker mein ek error aa gaya: {e}")
             if job_id and conn:
-                cur.execute("UPDATE jobs SET status = 'failed' WHERE id = %s", (job_id,))
-                conn.commit()
+                try:
+                    cur.execute("UPDATE jobs SET status = 'failed' WHERE id = %s", (job_id,))
+                    conn.commit()
+                except Exception as db_err:
+                    print(f"Failed job ko mark karne mein error: {db_err}")
             time.sleep(15) # Error aane par thoda zyada der ruko
         
         finally:
