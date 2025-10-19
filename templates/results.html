@@ -2,40 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search Results</title>
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <title>Results - YouTubers Data Tool</title>
     <style>
-        body { font-family: sans-serif; max-width: 1200px; margin: auto; padding: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f0f2f5; }
+        .container { max-width: 95%; margin: 20px auto; padding: 20px; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #1c1e21; }
+        .actions { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; }
+        button, .button-link { background-color: #1877f2; color: white; border: none; cursor: pointer; font-weight: bold; padding: 10px 15px; border-radius: 6px; text-decoration: none; }
+        .table-container { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 8px; border: 1px solid #ddd; text-align: left; }
-        th { background-color: #f2f2f2; }
-        a { text-decoration: none; padding: 10px 15px; background-color: #28a745; color: white; border-radius: 5px; }
+        th, td { padding: 12px 15px; border-bottom: 1px solid #dddfe2; text-align: left; font-size: 0.9em; white-space: nowrap; }
+        th { background-color: #f5f6f7; }
+        .status-select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        .flash { padding: 15px; margin-bottom: 20px; border-radius: 6px; }
+        .flash.success { background-color: #e9f6ec; color: #0f5132; }
     </style>
 </head>
 <body>
-    <h1>Found Channels ({{ channel_count }})</h1>
-    <p><a href="/download">Download Data as CSV</a> | <a href="/">New Search</a></p>
-    <table>
-        <thead>
-            <tr>
-                <th>Channel Name</th>
-                <th>Subscribers</th>
-                <th>Emails</th>
-                <th>Phone Numbers</th>
-                <th>Creation Date</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for channel in channels %}
-            <tr>
-                <td>{{ channel[0] }}</td>
-                <td>{{ channel[1] }}</td>
-                <td>{{ channel[2] }}</td>
-                <td>{{ channel[3] }}</td>
-                <td>{{ channel[4] }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="container">
+        <div class="panel">
+            <div class="actions">
+                <h1>Found Channels ({{ channel_count }})</h1>
+                <a href="/" class="button-link" style="margin-left: auto;">New Search</a>
+                <a href="/download" class="button-link">Export to Excel</a>
+            </div>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Channel Name</th><th>Subs</th><th>Category</th><th>Emails</th><th>Phones</th>
+                            <th>Instagram</th><th>Twitter</th><th>LinkedIn</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for channel in channels %}
+                        <tr data-channel-id="{{ channel[0] }}">
+                            <td>{{ channel[1] }}</td><td>{{ channel[2] }}</td><td>{{ channel[3] }}</td><td>{{ channel[4] }}</td>
+                            <td>{{ channel[5] }}</td><td>{{ channel[6] or 'N/A' }}</td><td>{{ channel[7] or 'N/A' }}</td>
+                            <td>{{ channel[8] or 'N/A' }}</td>
+                            <td>
+                                <select class="status-select" onchange="updateStatus(this)">
+                                    <option value="New" {% if channel[9] == 'New' %}selected{% endif %}>New</option>
+                                    <option value="Contacted" {% if channel[9] == 'Contacted' %}selected{% endif %}>Contacted</option>
+                                    <option value="Follow-up" {% if channel[9] == 'Follow-up' %}selected{% endif %}>Follow-up</option>
+                                    <option value="Converted" {% if channel[9] == 'Converted' %}selected{% endif %}>Converted</option>
+                                    <option value="Not a Fit" {% if channel[9] == 'Not a Fit' %}selected{% endif %}>Not a Fit</option>
+                                </select>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="9" style="text-align: center;">No data found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        function updateStatus(selectElement) {
+            const newStatus = selectElement.value;
+            const row = selectElement.closest('tr');
+            const channelId = row.dataset.channelId;
+            fetch('/update_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel_id: channelId, status: newStatus }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) { row.style.backgroundColor = '#e9f6ec'; setTimeout(() => { row.style.backgroundColor = ''; }, 1000); } 
+                else { alert('Status update failed'); }
+            });
+        }
+    </script>
 </body>
 </html>
+
