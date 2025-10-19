@@ -13,15 +13,44 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# --- Category to Keyword Mapping ---
+# --- **IMPROVEMENT**: Expanded Keyword List ---
 CATEGORY_KEYWORDS = {
-    "Technology": "hindi tech, gadgets, unboxing, programming, tech news",
-    "Gaming": "gaming india, live gameplay, mobile gaming, pc games",
-    "Finance": "stock market india, personal finance, investing, mutual funds",
-    "Education": "educational channel, study iq, online learning india",
-    "Comedy": "hindi comedy, funny video, vines, stand up comedy",
-    "Vlogging": "daily vlog, lifestyle vlog, travel vlogger india"
+    "Technology": (
+        "hindi tech, gadgets review, unboxing, mobile review, laptop review, tech news india, "
+        "smartphone tips, android tricks, iphone tricks, programming hindi, python hindi, "
+        "pc build india, latest gadgets, ai explained hindi, software development, "
+        "cyber security awareness, tech tips and tricks, saste gadgets, tech channel"
+    ),
+    "Gaming": (
+        "gaming india, live gameplay, mobile gaming, pc games, bgmi live, valorant india, "
+        "free fire gameplay, gta v hindi, minecraft hindi, gaming shorts, gaming channel, "
+        "best android games, gaming pc build, ps5 india, pro gamer, gaming highlights, "
+        "game walkthrough hindi, op gameplay"
+    ),
+    "Finance": (
+        "stock market india, personal finance, investing for beginners, mutual funds sahi hai, "
+        "share market live, sip investment, cryptocurrency india, bitcoin hindi, "
+        "how to save money, credit card tips, budgeting tips hindi, business ideas, "
+        "startup india, case study hindi, make money online, nifty 50, intraday trading"
+    ),
+    "Education": (
+        "educational channel, study iq, online learning india, upsc preparation, ssc cgl, "
+        "neet motivation, jee mains, current affairs 2025, gk in hindi, skill development, "
+        "english speaking course, communication skills, history in hindi, science experiments, "
+        "amazing facts, knowledge video, class 12"
+    ),
+    "Comedy": (
+        "hindi comedy, funny video, vines, stand up comedy, comedy sketch, funny roast, "
+        "prank video india, desi comedy, animation comedy, mimicry, funny dubbing, "
+        "bhojpuri comedy, haryanvi comedy, comedy shorts"
+    ),
+    "Vlogging": (
+        "daily vlog, lifestyle vlog, travel vlogger india, india travel vlog, mountain vlog, "
+        "goa vlog, budget travel, moto vlogging india, food vlog, shopping haul, "
+        "village life vlog, family vlog, couple vlog, a day in my life, my first vlog"
+    )
 }
+
 
 def get_youtube_service():
     global youtube_key_index
@@ -65,7 +94,6 @@ def analyze_channel_with_ai(description):
     if not GEMINI_API_KEY:
         return "AI Not Configured", "N/A", "N/A"
     try:
-        # AI ka version yahan set kiya gaya hai
         model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025')
         prompt = f"""Analyze the following YouTube channel description and provide a one-sentence summary, the primary tone (e.g., Professional, Casual, Funny, Educational), and the likely target audience (e.g., Students, Gamers, Professionals).
         Description: "{description}"
@@ -84,17 +112,13 @@ def analyze_channel_with_ai(description):
         return "AI analysis failed.", "N/A", "N/A"
 
 def extract_details(description):
-    # Contact Info
     emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', description)))
     phones = list(set(re.findall(r'(?:\+91)?[ -]?[6-9]\d{9}', description)))
-    # Social Media Links
     instagram = re.search(r'(https?://(?:www\.)?instagram\.com/[a-zA-Z0-9_.]+)', description)
     twitter = re.search(r'(https?://(?:www\.)?twitter\.com/[a-zA-Z0-9_]+)', description)
     linkedin = re.search(r'(https?://(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_-]+)', description)
-    
     return {
-        "emails": ", ".join(emails),
-        "phones": ", ".join(phones),
+        "emails": ", ".join(emails), "phones": ", ".join(phones),
         "instagram": instagram.group(0) if instagram else None,
         "twitter": twitter.group(0) if twitter else None,
         "linkedin": linkedin.group(0) if linkedin else None,
@@ -108,7 +132,8 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, 
     new_channels_found = 0
 
     for keyword in keywords.split(','):
-        if new_channels_found >= max_channels_limit: break
+        keyword = keyword.strip()
+        if not keyword or new_channels_found >= max_channels_limit: break
         try:
             youtube = get_youtube_service()
             next_page_token = None
@@ -124,16 +149,15 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, 
 
                 for item in channel_details_response.get('items', []):
                     cur.execute("SELECT EXISTS(SELECT 1 FROM channels WHERE channel_id=%s)", (item['id'],))
-                    if cur.fetchone()[0]: continue # Skip if already exists
+                    if cur.fetchone()[0]: continue
 
                     if new_channels_found >= max_channels_limit: break
                     
                     description = item.get('snippet', {}).get('description', '')
                     details = extract_details(description)
 
-                    # **NYA FILTER**: Contact info check
                     if require_contact and not (details['emails'] or details['phones']):
-                        continue # Skip this channel
+                        continue
 
                     stats = item.get('statistics', {})
                     if not stats.get('hiddenSubscriberCount', False):
