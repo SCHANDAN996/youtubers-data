@@ -4,54 +4,43 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Results - YouTubers Data Tool</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f0f2f5; }
-        .container { max-width: 98%; margin: 20px auto; padding: 20px; }
-        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h1 { color: #1c1e21; }
-        .top-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 15px; }
-        .top-controls > div { flex-grow: 1; min-width: 150px; }
-        .top-controls label { font-weight: 600; font-size: 0.9em; color: #606770; display: block; margin-bottom: 5px; }
-        .top-controls input, .top-controls select, .top-controls button { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #dddfe2; box-sizing: border-box; }
-        button, .button-link { background-color: #1877f2; color: white; border: none; cursor: pointer; font-weight: bold; padding: 10px 15px; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
-        button:hover, .button-link:hover { background-color: #166fe5; }
-
-        .table-container { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px 15px; border-bottom: 1px solid #dddfe2; text-align: left; font-size: 0.9em; white-space: nowrap; }
-        th { background-color: #f5f6f7; }
-        .status-select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
-        .flash { padding: 15px; margin-bottom: 20px; border-radius: 6px; }
-        .flash.success { background-color: #e9f6ec; color: #0f5132; }
-        .flash.error { background-color: #f8d7da; color: #842029; }
-        .social-link { color: #1877f2; text-decoration: underline; }
-        .social-link:hover { color: #166fe5; }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
         <div class="panel">
             <div class="top-controls">
-                <h1>Found Channels ({{ channel_count }})</h1>
-                <a href="/" class="button-link">New Search</a>
-                <a href="/download" class="button-link">Export to Excel</a>
+                <div class="title-group">
+                    <h1>Found Channels ({{ channel_count }})</h1>
+                    <div class="theme-switch-wrapper">
+                        <span style="color: var(--label-color);">☀️</span>
+                        <label class="theme-switch" for="theme-toggle">
+                            <input type="checkbox" id="theme-toggle" />
+                            <div class="slider"></div>
+                        </label>
+                        <span style="color: var(--label-color);">🌙</span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-left: auto;">
+                    <a href="{{ url_for('main.index') }}" class="button-link">New Search</a>
+                    <a href="{{ url_for('main.download') }}" class="button-link">Export to Excel</a>
+                </div>
             </div>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
-                        <div class="flash {{ category }}">{{ message }}</div>
+                        <div class="flash {{ 'success' if category == 'success' else 'error' }}">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
             {% endwith %}
 
-            <!-- **NEW**: Filtering and Sorting Controls -->
             <div class="panel" style="margin-bottom: 20px;">
-                <form id="filterSortForm" action="{{ url_for('results') }}" method="get">
-                    <div class="form-grid">
-                        <div>
+                <form id="filterSortForm" action="{{ url_for('main.results') }}" method="get">
+                    <div class="top-controls">
+                         <div>
                             <label for="sort_by">Sort By:</label>
-                            <select id="sort_by" name="sort_by" onchange="document.getElementById('filterSortForm').submit()">
+                            <select id="sort_by" name="sort_by" onchange="this.form.submit()">
                                 <option value="retrieved_at" {% if current_sort_by == 'retrieved_at' %}selected{% endif %}>Last Retrieved</option>
                                 <option value="subscriber_count" {% if current_sort_by == 'subscriber_count' %}selected{% endif %}>Subscribers</option>
                                 <option value="category" {% if current_sort_by == 'category' %}selected{% endif %}>Category</option>
@@ -62,14 +51,14 @@
                         </div>
                         <div>
                             <label for="sort_order">Order:</label>
-                            <select id="sort_order" name="sort_order" onchange="document.getElementById('filterSortForm').submit()">
+                            <select id="sort_order" name="sort_order" onchange="this.form.submit()">
                                 <option value="DESC" {% if current_sort_order == 'DESC' %}selected{% endif %}>Descending</option>
                                 <option value="ASC" {% if current_sort_order == 'ASC' %}selected{% endif %}>Ascending</option>
                             </select>
                         </div>
                         <div>
                             <label for="category_filter">Filter by Category:</label>
-                            <select id="category_filter" name="category_filter" onchange="document.getElementById('filterSortForm').submit()">
+                            <select id="category_filter" name="category_filter" onchange="this.form.submit()">
                                 <option value="">All Categories</option>
                                 {% for cat in all_categories %}
                                     <option value="{{ cat }}" {% if current_filter_category == cat %}selected{% endif %}>{{ cat }}</option>
@@ -77,7 +66,7 @@
                             </select>
                         </div>
                         <div>
-                            <label for="query">Search (Name/Email/Desc):</label>
+                            <label for="query">Search (Name/Email):</label>
                             <input type="text" id="query" name="query" value="{{ current_search_query }}" onkeyup="submitFilterDelayed()">
                         </div>
                         <div>
@@ -87,34 +76,19 @@
                 </form>
             </div>
 
-
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
-                            <th>Channel Name</th>
-                            <th>Subs</th>
-                            <th>Category</th>
-                            <th>Emails</th>
-                            <th>Phones</th>
-                            <th>Shorts</th>
-                            <th>Long Videos</th>
-                            <th>Instagram</th>
-                            <th>Twitter</th>
-                            <th>LinkedIn</th>
-                            <th>Status</th>
+                            <th>Channel Name</th><th>Subs</th><th>Category</th><th>Emails</th><th>Phones</th>
+                            <th>Shorts</th><th>Long Videos</th><th>Instagram</th><th>Twitter</th><th>LinkedIn</th><th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for channel in channels %}
                         <tr data-channel-id="{{ channel[0] }}">
-                            <td>{{ channel[1] }}</td>
-                            <td>{{ channel[2] }}</td>
-                            <td>{{ channel[3] }}</td>
-                            <td>{{ channel[4] }}</td>
-                            <td>{{ channel[5] }}</td>
-                            <td>{{ channel[10] }}</td> <!-- Shorts Count -->
-                            <td>{{ channel[11] }}</td> <!-- Long Videos Count -->
+                            <td>{{ channel[1] }}</td><td>{{ channel[2] }}</td><td>{{ channel[3] }}</td><td>{{ channel[4] }}</td>
+                            <td>{{ channel[5] }}</td><td>{{ channel[10] }}</td><td>{{ channel[11] }}</td>
                             <td>{% if channel[6] %}<a href="{{ channel[6] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
                             <td>{% if channel[7] %}<a href="{{ channel[7] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
                             <td>{% if channel[8] %}<a href="{{ channel[8] }}" target="_blank" class="social-link">Link</a>{% else %}N/A{% endif %}</td>
@@ -137,32 +111,50 @@
         </div>
     </div>
     <script>
+        const themeToggle = document.getElementById('theme-toggle');
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme) {
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            if (currentTheme === 'dark') { themeToggle.checked = true; }
+        }
+        themeToggle.addEventListener('change', function() {
+            if (this.checked) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                localStorage.setItem('theme', 'light');
+            }
+        });
+
         let filterTimeout;
         function submitFilterDelayed() {
             clearTimeout(filterTimeout);
             filterTimeout = setTimeout(() => {
                 document.getElementById('filterSortForm').submit();
-            }, 500); // 500ms delay after typing stops
+            }, 500);
         }
 
         function updateStatus(selectElement) {
             const newStatus = selectElement.value;
             const row = selectElement.closest('tr');
             const channelId = row.dataset.channelId;
-            fetch('/update_status', {
+            fetch("{{ url_for('main.update_status') }}", {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ channel_id: channelId, status: newStatus }),
             })
             .then(response => response.json())
             .then(data => {
-                if (data.success) { row.style.backgroundColor = '#e9f6ec'; setTimeout(() => { row.style.backgroundColor = ''; }, 1000); } 
+                if (data.success) { 
+                    row.style.transition = 'background-color 0.5s';
+                    row.style.backgroundColor = '#2b4530';
+                    setTimeout(() => { row.style.backgroundColor = ''; }, 1500); 
+                } 
                 else { alert('Status update failed'); }
             })
-            .catch(error => { console.error('Error:', error); alert('An error occurred while updating status.'); });
+            .catch(error => { console.error('Error:', error); alert('An error occurred.'); });
         }
     </script>
 </body>
 </html>
-
-
