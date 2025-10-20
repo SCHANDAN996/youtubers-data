@@ -12,9 +12,6 @@ from init_db import initialize_database
 main_bp = Blueprint('main', __name__)
 
 def get_quota_status_message():
-    """
-    डेटाबेस से API कोटा की स्थिति की जांच करता है।
-    """
     conn = None
     try:
         conn = youtube_service.get_db_connection()
@@ -30,18 +27,12 @@ def get_quota_status_message():
 
 @main_bp.route('/')
 def index():
-    """
-    मुख्य सर्च पेज दिखाता है।
-    """
     default_date = (datetime.today() - timedelta(days=90)).strftime('%Y-%m-%d')
     quota_message = get_quota_status_message()
     return render_template('index.html', default_date=default_date, quota_message=quota_message)
 
 @main_bp.route('/search', methods=['POST'])
 def search():
-    """
-    सर्च पैरामीटर लेता है और find_channels फंक्शन को एक नए बैकग्राउंड थ्रेड में चलाता है।
-    """
     try:
         category = request.form.get('category')
         start_date = request.form.get('start_date')
@@ -50,33 +41,31 @@ def search():
         max_channels = int(request.form.get('max_channels', 100))
         require_contact = 'require_contact' in request.form
         
-        # एक नया थ्रेड बनाएं जो youtube_service.find_channels को चलाएगा
         search_thread = threading.Thread(
             target=youtube_service.find_channels,
             args=(category, start_date, min_subs, max_subs, max_channels, require_contact)
         )
-        search_thread.start() # थ्रेड को बैकग्राउंड में शुरू करें
+        search_thread.start()
 
         flash("Channel search has been started in the background. Results will appear here shortly.", "success")
-        return redirect(url_for('main.loading')) # लोडिंग पेज पर भेजें
+        return redirect(url_for('main.loading'))
         
     except Exception as e:
         flash(f"An error occurred while starting the search: {e}", "error")
         return redirect(url_for('main.index'))
 
+@main_bp.route('/update-video-counts', methods=['POST'])
+def update_video_counts():
+    flash("Update video counts feature is not fully implemented yet.", "info")
+    return jsonify({'success': False, 'message': 'Feature not implemented'})
+
 @main_bp.route('/loading')
 def loading():
-    """
-    सर्च के दौरान लोडिंग पेज दिखाता है।
-    """
     quota_message = get_quota_status_message()
     return render_template('loading.html', quota_message=quota_message)
 
 @main_bp.route('/results')
 def results():
-    """
-    डेटाबेस से मिले चैनलों को सॉर्टिंग और फिल्टरिंग के साथ दिखाता है।
-    """
     quota_message = get_quota_status_message()
     conn = youtube_service.get_db_connection()
     cur = conn.cursor()
@@ -128,9 +117,6 @@ def results():
 
 @main_bp.route('/update_status', methods=['POST'])
 def update_status():
-    """
-    AJAX कॉल के माध्यम से एक चैनल की स्थिति को अपडेट करता है।
-    """
     try:
         data = request.get_json()
         conn = youtube_service.get_db_connection()
@@ -145,9 +131,6 @@ def update_status():
 
 @main_bp.route('/delete', methods=['POST'])
 def delete():
-    """
-    एक या सभी चैनलों को डिलीट करता है।
-    """
     conn = youtube_service.get_db_connection()
     cur = conn.cursor()
     payload = request.get_json()
@@ -166,9 +149,6 @@ def delete():
 
 @main_bp.route('/download')
 def download():
-    """
-    सभी डेटा को एक CSV फ़ाइल के रूप में डाउनलोड करता है।
-    """
     conn = youtube_service.get_db_connection()
     df = pd.read_sql_query("SELECT channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count, description, creation_date, retrieved_at FROM channels ORDER BY subscriber_count DESC", conn)
     conn.close()
@@ -184,10 +164,6 @@ def download():
 # =========================================================
 @main_bp.route('/setup-database-for-the-first-time-9e7d3f')
 def setup_database():
-    """
-    यह एक गुप्त रूट है जो डेटाबेस में टेबल बनाने के लिए 
-    init_db.py स्क्रिप्ट को चलाता है। इसे केवल एक बार उपयोग करें।
-    """
     try:
         initialize_database()
         flash("DATABASE SETUP SUCCESSFUL! Tables have been created.", "success")
