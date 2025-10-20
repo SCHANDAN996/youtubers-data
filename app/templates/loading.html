@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="refresh" content="45;url={{ url_for('main.results') }}">
+        <title>Searching...</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    </head>
+    <body>
+        <div class="loading-container">
+
+            {% if quota_message %}
+            <div class="flash error" style="margin-bottom: 20px; text-align: center; max-width: 600px;">
+                <strong>🚨 API Status Alert:</strong> {{ quota_message }}
+                <p style="margin-top: 10px;">You can still view previously found data.</p>
+            </div>
+            {% endif %}
+
+            <div class="spinner"></div>
+            <h2>Searching for Channels...</h2>
+            <p>Your search is being processed in the background.</p>
+            <p>This page will automatically redirect to the results page in a moment.</p>
+            
+            <a href="{{ url_for('main.results') }}" class="button-link" style="margin-top: 20px;">Go to Results Page Now</a>
+        </div>
+        <script>
+            // Dark mode theme ko loading page par bhi apply karein
+            const currentTheme = localStorage.getItem('theme');
+            if (currentTheme) {
+                document.documentElement.setAttribute('data-theme', currentTheme);
+            }
+        </script>
+    </body>
+</html>
