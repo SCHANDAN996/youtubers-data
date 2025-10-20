@@ -8,7 +8,6 @@ import json
 main_bp = Blueprint('main', __name__)
 
 def get_quota_status_message():
-    """Database se quota status message fetch karta hai."""
     conn = None
     try:
         conn = youtube_service.get_db_connection()
@@ -16,12 +15,9 @@ def get_quota_status_message():
         cur.execute("SELECT value FROM app_state WHERE key = 'quota_status'")
         result = cur.fetchone()
         return result[0] if result else None
-    except Exception:
-        # Agar table nahi hai ya koi aur error hai, to None return karein
-        return None
+    except Exception: return None
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 @main_bp.route('/')
 def index():
@@ -31,20 +27,59 @@ def index():
 
 @main_bp.route('/search', methods=['POST'])
 def search():
-    # ... is function mein koi badlav nahi ...
     try:
-        job_params = { 'category': request.form.get('category'), 'start_date': request.form.get('start_date'), 'min_subs': int(request.form.get('min_subs', 0)), 'max_subs': int(request.form.get('max_subs', 1000000)), 'max_channels': int(request.form.get('max_channels', 100)), 'require_contact': 'require_contact' in request.form }
+        # SUDHAR: Job mein type specify karein
+        job_params = {
+            'type': 'find_channels', # Job ka type
+            'category': request.form.get('category'),
+            'start_date': request.form.get('start_date'),
+            'min_subs': int(request.form.get('min_subs', 0)),
+            'max_subs': int(request.form.get('max_subs', 1000000)),
+            'max_channels': int(request.form.get('max_channels', 100)),
+            'require_contact': 'require_contact' in request.form
+        }
         conn = youtube_service.get_db_connection()
         cur = conn.cursor()
         cur.execute("INSERT INTO jobs (params) VALUES (%s)", (json.dumps(job_params),))
         conn.commit()
         cur.close()
         conn.close()
-        return redirect(url_for('main.loading'))
+        flash("Channel search has been started in the background. Results will appear here shortly.", "success")
+        return redirect(url_for('main.results'))
     except Exception as e:
         flash(f"Job shuru karne mein error aa gaya: {e}", "error")
         return redirect(url_for('main.index'))
 
+@main_bp.route('/update-video-counts', methods=['POST'])
+def update_video_counts():
+    """
+    Naya Route: Chune hue channels ke liye video count update job banata hai.
+    """
+    try:
+        data = request.get_json()
+        channel_ids = data.get('channel_ids')
+        
+        if not channel_ids:
+            return jsonify({'success': False, 'message': 'No channels selected.'}), 400
+
+        job_params = {
+            'type': 'update_videos',
+            'channel_ids': channel_ids
+        }
+        conn = youtube_service.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO jobs (params) VALUES (%s)", (json.dumps(job_params),))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        flash(f"Started updating video counts for {len(channel_ids)} selected channels. This will run in the background.", "success")
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ... baki ke routes (loading, results, etc.) pehle jaise hi rahenge, unhe yahan dobara nahi likh raha ...
 @main_bp.route('/loading')
 def loading():
     quota_message = get_quota_status_message()
@@ -55,7 +90,6 @@ def results():
     quota_message = get_quota_status_message()
     conn = youtube_service.get_db_connection()
     cur = conn.cursor()
-    # ... baki results logic waisa hi rahega ...
     sort_by = request.args.get('sort_by', 'retrieved_at')
     sort_order = request.args.get('sort_order', 'DESC')
     search_query = request.args.get('query', '').strip()
@@ -80,7 +114,6 @@ def results():
     all_categories = list(youtube_service.CATEGORY_KEYWORDS.keys())
     return render_template('results.html', channels=channels, channel_count=len(channels), all_categories=all_categories, current_sort_by=sort_by, current_sort_order=sort_order, current_search_query=search_query, current_filter_category=filter_category, quota_message=quota_message)
 
-# ... baki ke routes (update_status, delete, download) waise hi rahenge ...
 @main_bp.route('/update_status', methods=['POST'])
 def update_status():
     try:
