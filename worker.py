@@ -15,64 +15,62 @@ def process_jobs():
     print("Worker shuru ho gaya, naye jobs ka intezar...")
     while True:
         conn = None
-        job_id = None # Error handling ke liye job_id ko pehle se define karein
+        job = None
         try:
             conn = youtube_service.get_db_connection()
             cur = conn.cursor()
             
-            # Ek 'pending' job ko select karo aur use 'running' mark karo
             cur.execute("""
-                UPDATE jobs
-                SET status = 'running', started_at = CURRENT_TIMESTAMP
+                UPDATE jobs SET status = 'running', started_at = CURRENT_TIMESTAMP
                 WHERE id = (
-                    SELECT id FROM jobs
-                    WHERE status = 'pending'
-                    ORDER BY created_at
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                RETURNING id, params;
+                    SELECT id FROM jobs WHERE status = 'pending' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+                ) RETURNING id, params;
             """)
-            
             job = cur.fetchone()
             conn.commit()
 
             if job:
                 job_id, params = job
-                print(f"Job #{job_id} uthaya gaya. Params: {params}")
+                print(f"Job #{job_id} uthaya gaya. Type: {params.get('type')}")
+
+                # SUDHAR: Job ke type ke aadhar par function call karein
+                job_type = params.get('type', 'find_channels') # Default purana behavior
+
+                if job_type == 'find_channels':
+                    youtube_service.find_channels(
+                        category=params['category'],
+                        date_after=params['start_date'],
+                        min_subs=params['min_subs'],
+                        max_subs=params['max_subs'],
+                        max_channels_limit=params['max_channels'],
+                        require_contact=params['require_contact']
+                    )
+                elif job_type == 'update_videos':
+                    youtube_service.update_video_counts_for_channels(
+                        channel_ids=params['channel_ids']
+                    )
                 
-                # Asli search function ko call karo
-                youtube_service.find_channels(
-                    category=params['category'],
-                    date_after=params['start_date'],
-                    min_subs=params['min_subs'],
-                    max_subs=params['max_subs'],
-                    max_channels_limit=params['max_channels'],
-                    require_contact=params['require_contact']
-                )
-                
-                # Job ko 'completed' mark karo
                 cur.execute("UPDATE jobs SET status = 'completed', finished_at = CURRENT_TIMESTAMP WHERE id = %s", (job_id,))
                 conn.commit()
                 print(f"Job #{job_id} safaltapoorvak poora hua.")
             else:
-                # Agar koi job nahi hai, to 10 second ruko
                 time.sleep(10)
         
         except Exception as e:
             print(f"Worker mein ek error aa gaya: {e}")
-            if job_id and conn:
+            if job and conn:
+                job_id = job[0]
                 try:
                     cur.execute("UPDATE jobs SET status = 'failed' WHERE id = %s", (job_id,))
                     conn.commit()
                 except Exception as db_err:
                     print(f"Failed job ko mark karne mein error: {db_err}")
-            time.sleep(15) # Error aane par thoda zyada der ruko
+            time.sleep(15)
         
         finally:
             if conn:
-                cur.close()
                 conn.close()
 
 if __name__ == '__main__':
     process_jobs()
+
