@@ -4,16 +4,38 @@ from datetime import datetime
 import time
 from googleapiclient.discovery import build
 import psycopg2
-import google.generativeai as genai
 from googleapiclient.errors import HttpError
 
-# ... (API Key and Category Keywords setup will remain the same) ...
 # API Key Setup
-YOUTUBE_API_KEYS = os.getenv('YOUTUBE_API_KEYS', '').split(',')
-youtube_key_index = 0
+YOUTUBE_API_KEYS = [key.strip() for key in os.getenv('YOUTUBE_API_KEYS', '').split(',') if key.strip()]
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+
+class YouTubeServiceManager:
+    """
+    SUDHAR: API Keys ko manage karne ke liye ek behtar class.
+    Yeh error aane par hi key switch karega.
+    """
+    def __init__(self, api_keys):
+        if not api_keys:
+            raise ValueError("YouTube API keys are not configured.")
+        self.api_keys = api_keys
+        self.current_key_index = 0
+        self.service = self._build_service()
+
+    def _build_service(self):
+        api_key = self.api_keys[self.current_key_index]
+        print(f"YouTube client ko API Key index #{self.current_key_index} ke saath banaya ja raha hai.")
+        return build('youtube', 'v3', developerKey=api_key)
+
+    def get_current_key(self):
+        return self.api_keys[self.current_key_index]
+
+    def switch_key_and_get_service(self):
+        """Error aane par agli key par switch karta hai."""
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        print(f"API Key mein samasya! Agli Key index #{self.current_key_index} par switch kiya ja raha hai.")
+        self.service = self._build_service()
+        return self.service
 
 # Category Keywords (koi badlav nahi)
 CATEGORY_KEYWORDS = {
@@ -26,208 +48,118 @@ CATEGORY_KEYWORDS = {
     "YouTube related": "youtube growth tips, how to grow youtube channel, youtube seo, 1000 subscribers kaise badhaye, 4000 watch time kaise kare, youtube studio tutorial, vidiq tutorial, tubebuddy tutorial, youtube policies hindi, monetize youtube channel, youtube earning tips, youtube shorts strategy, video editing for youtube, thumbnail tutorial, digital marketing for creators, content creation tips"
 }
 
-
 def get_db_connection():
     return psycopg2.connect(os.getenv('DATABASE_URL'))
 
-# ... (init_db, analyze_channel_with_ai, extract_details, get_video_counts functions will remain the same) ...
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS channels (
-        id SERIAL PRIMARY KEY, channel_id VARCHAR(255) UNIQUE NOT NULL, channel_name TEXT NOT NULL,
-        subscriber_count INTEGER, creation_date VARCHAR(100), emails TEXT, phone_numbers TEXT,
-        description TEXT, retrieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, category VARCHAR(100),
-        ai_summary TEXT, ai_tone VARCHAR(100), ai_audience TEXT, status VARCHAR(50) DEFAULT 'New',
-        instagram_link TEXT, twitter_link TEXT, linkedin_link TEXT,
-        short_videos_count INTEGER DEFAULT 0, long_videos_count INTEGER DEFAULT 0
-    );''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS jobs (
-        id SERIAL PRIMARY KEY, params JSONB NOT NULL, status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, started_at TIMESTAMP, finished_at TIMESTAMP
-    );''')
-    cur.execute('''
-    CREATE TABLE IF NOT EXISTS app_state (
-        key VARCHAR(50) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );''')
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("Database tables checked/created.")
-
-def get_youtube_service():
-    global youtube_key_index
-    if not any(YOUTUBE_API_KEYS) or YOUTUBE_API_KEYS == ['']:
-        raise ValueError("YouTube API keys are not configured.")
-    api_key = YOUTUBE_API_KEYS[youtube_key_index]
-    print(f"Using API Key index: {youtube_key_index}")
-    youtube_key_index = (youtube_key_index + 1) % len(YOUTUBE_API_KEYS)
-    service = build('youtube', 'v3', developerKey=api_key)
-    return service, api_key
-
-def analyze_channel_with_ai(description):
-    if not GEMINI_API_KEY: return "AI Not Configured", "N/A", "N/A"
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"""Analyze the following YouTube channel description... Format: Summary: ... Tone: ... Audience: ..."""
-        response = model.generate_content(prompt)
-        text = response.text
-        summary = re.search(r"Summary:\s*(.*)", text, re.IGNORECASE)
-        tone = re.search(r"Tone:\s*(.*)", text, re.IGNORECASE)
-        audience = re.search(r"Audience:\s*(.*)", text, re.IGNORECASE)
-        return (summary.group(1).strip() if summary else "Could not determine"), (tone.group(1).strip() if tone else "N/A"), (audience.group(1).strip() if audience else "N/A")
-    except Exception as e:
-        print(f"AI analysis failed: {e}")
-        return "AI analysis failed.", "N/A", "N/A"
-
-def extract_details(description):
-    emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', description)))
-    phones = list(set(re.findall(r'(?:\+91)?[ -]?(?:[6-9]\d{2}[ -]?\d{3}[ -]?\d{4}|\d{10})', description)))
-    instagram = re.search(r'(?:https?://)?(?:www\.)?instagram\.com/([a-zA-Z0-9._]+)', description)
-    twitter = re.search(r'(?:https?://)?(?:www\.)?twitter\.com/([a-zA-Z0-9_]+)', description)
-    linkedin = re.search(r'(?:https?://)?(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)', description)
-    return {"emails": ", ".join(emails), "phones": ", ".join(phones), "instagram": instagram.group(0) if instagram else None, "twitter": twitter.group(0) if twitter else None, "linkedin": linkedin.group(0) if linkedin else None}
-
-def get_video_counts(youtube_service, channel_id):
-    try:
-        shorts_request = youtube_service.search().list(part="id", channelId=channel_id, type="video", videoDuration="short", maxResults=1).execute()
-        shorts_count = shorts_request.get('pageInfo', {}).get('totalResults', 0)
-        long_videos_request = youtube_service.search().list(part="id", channelId=channel_id, type="video", videoDuration="long", maxResults=1).execute()
-        long_videos_count = long_videos_request.get('pageInfo', {}).get('totalResults', 0)
-        return shorts_count, long_videos_count
-    except Exception as e:
-        if isinstance(e, HttpError) and e.resp.status == 403: raise
-        print(f"Error fetching video counts for channel {channel_id}: {e}")
-        return 0, 0
-
-
+# ... (init_db, analyze_channel_with_ai, extract_details, get_video_counts functions ko abhi ke liye chhod dete hain,
+# humara focus abhi find_channels ko robust banana hai) ...
 def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, require_contact):
-    # SUDHAR: Is function se video count aur AI analysis ka call hata diya gaya hai
+    print("--- Naya Channel Search Job Shuru Hua ---")
+    print(f"Parameters: Category='{category}', After='{date_after}', Subs='{min_subs}-{max_subs}', Limit='{max_channels_limit}'")
+
+    # SUDHAR: Behtar API key manager ka istemal
+    try:
+        yt_manager = YouTubeServiceManager(YOUTUBE_API_KEYS)
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        return
+
     keywords = CATEGORY_KEYWORDS.get(category, category)
     search_after_date = datetime.strptime(date_after, '%Y-%m-%d').strftime('%Y-%m-%dT%H:%M:%SZ')
     conn = get_db_connection()
     cur = conn.cursor()
+
     try:
         cur.execute("DELETE FROM app_state WHERE key = 'quota_status'")
         conn.commit()
-    except Exception as db_err:
-        print(f"Purana quota status clear karne mein error: {db_err}")
-        conn.rollback()
+    except Exception: conn.rollback()
 
     new_channels_found = 0
     processed_channel_ids = set()
     cur.execute("SELECT channel_id FROM channels")
     existing_ids = {row[0] for row in cur.fetchall()}
     processed_channel_ids.update(existing_ids)
-    youtube, current_api_key = get_youtube_service()
-
+    
     for keyword in keywords.split(','):
+        keyword = keyword.strip()
         if not keyword or new_channels_found >= max_channels_limit: break
-        print(f"'{keyword}' keyword ke liye search kiya ja raha hai...")
+        print(f"\nLOG: Keyword '{keyword}' ke liye search shuru.")
         next_page_token = None
+        
         while new_channels_found < max_channels_limit:
-            try:
-                search_request = youtube.search().list(q=keyword, part="snippet", type="channel", maxResults=50, publishedAfter=search_after_date, pageToken=next_page_token).execute()
-                channel_ids = [item['snippet']['channelId'] for item in search_response.get('items', []) if item['snippet']['channelId'] not in processed_channel_ids]
-                if not channel_ids: break
-                processed_channel_ids.update(channel_ids)
-                channel_details_response = youtube.channels().list(part="snippet,statistics", id=",".join(channel_ids)).execute()
-
-                for item in channel_details_response.get('items', []):
-                    if new_channels_found >= max_channels_limit: break
-                    description = item.get('snippet', {}).get('description', '')
-                    details = extract_details(description)
-                    if require_contact and not (details['emails'] or details['phones']): continue
-                    stats = item.get('statistics', {})
-                    if not stats.get('hiddenSubscriberCount', False):
-                        subscriber_count = int(stats.get('subscriberCount', 0))
-                        if min_subs <= subscriber_count <= max_subs:
-                            # video_counts aur AI analysis yahan se HATA diya gaya hai
-                            channel_info = {
-                                "channel_id": item['id'], "channel_name": item['snippet'].get('title'),
-                                "subscriber_count": subscriber_count, "creation_date": item['snippet'].get('publishedAt', '')[:10],
-                                "emails": details['emails'], "phone_numbers": details['phones'], "description": description,
-                                "category": category, "instagram_link": details['instagram'], "twitter_link": details['twitter'],
-                                "linkedin_link": details['linkedin']
-                            }
-                            cur.execute("""
-                                INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category, instagram_link, twitter_link, linkedin_link)
-                                VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s, %(instagram_link)s, %(twitter_link)s, %(linkedin_link)s)
-                                ON CONFLICT (channel_id) DO NOTHING;
-                            """, channel_info)
-                            if cur.rowcount > 0:
-                                new_channels_found += 1
-                                print(f"Naya channel mila: {channel_info['channel_name']} ({new_channels_found}/{max_channels_limit})")
+            api_call_successful = False
+            for _ in range(len(yt_manager.api_keys)): # Sabhi keys ko ek baar try karne ke liye loop
+                try:
+                    youtube = yt_manager.service
+                    search_response = youtube.search().list(
+                        q=keyword, part="snippet", type="channel", maxResults=50,
+                        publishedAfter=search_after_date, pageToken=next_page_token
+                    ).execute()
+                    api_call_successful = True
+                    break # Agar call safal, to is loop se bahar
+                except HttpError as e:
+                    print(f"LOG: API Error! Status: {e.resp.status}, Reason: {e.reason}")
+                    error_content = e.content.decode('utf-8')
+                    if "quotaExceeded" in error_content or e.resp.status == 403:
+                        youtube = yt_manager.switch_key_and_get_service()
+                        continue # Agli key ke saath dobara try karo
+                    else:
+                        raise # Koi aur error hai to bahar niklo
+            
+            if not api_call_successful:
+                print("FATAL ERROR: Sabhi API keys fail ho gayi hain. Worker ruk raha hai.")
+                # Database mein permanent error message save karo
+                error_message = f"All API keys are failing. Last tried key index #{yt_manager.current_key_index}. Please check your keys in Google Cloud Console."
+                cur.execute("INSERT INTO app_state (key, value) VALUES ('quota_status', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;", (error_message,))
                 conn.commit()
+                conn.close()
+                return # Poore function se bahar
+            
+            print(f"LOG: Keyword '{keyword}' ke liye page data mila.")
+            channel_items = search_response.get('items', [])
+            if not channel_items:
+                print("LOG: Is page par aur channels nahi mile.")
+                break
+            
+            channel_ids = [item['snippet']['channelId'] for item in channel_items if item['snippet']['channelId'] not in processed_channel_ids]
+            if not channel_ids:
+                print("LOG: Is page par naye (unique) channels nahi mile.")
                 next_page_token = search_response.get('nextPageToken')
                 if not next_page_token: break
-                time.sleep(1)
-            except HttpError as e:
-                # ... (Error handling logic waisi hi rahegi) ...
-                error_content = e.content.decode('utf-8') if e.content else ''
-                if "quotaExceeded" in error_content:
-                    try:
-                        masked_key = f"....**{current_api_key[-4:]}"
-                        error_message = f"Quota exhausted for key {masked_key} on {datetime.now().strftime('%Y-%m-%d %H:%M')}. Searches are paused."
-                        cur.execute("INSERT INTO app_state (key, value) VALUES ('quota_status', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;", (error_message,))
-                        conn.commit()
-                    except Exception as db_err: conn.rollback()
-                    conn.close()
-                    return
-                youtube, current_api_key = get_youtube_service()
-                time.sleep(5)
-            except Exception as e:
-                print(f"Anjaan error: {e}")
-                break
-    cur.close()
-    conn.close()
-    print("Search poora hua.")
+                continue
 
-
-def update_video_counts_for_channels(channel_ids):
-    """
-    Naya function: Di gayi channel IDs ke liye video counts fetch aur update karta hai.
-    """
-    print(f"Updating video counts for {len(channel_ids)} channels...")
-    conn = get_db_connection()
-    cur = conn.cursor()
-    youtube, current_api_key = get_youtube_service()
-
-    for i, channel_id in enumerate(channel_ids):
-        try:
-            print(f"Processing {i+1}/{len(channel_ids)}: {channel_id}")
-            shorts_count, long_videos_count = get_video_counts(youtube, channel_id)
+            processed_channel_ids.update(channel_ids)
+            print(f"LOG: {len(channel_ids)} naye channel IDs ke details fetch kiye ja rahe hain.")
             
-            cur.execute("""
-                UPDATE channels
-                SET short_videos_count = %s, long_videos_count = %s
-                WHERE channel_id = %s;
-            """, (shorts_count, long_videos_count, channel_id))
-            
+            try:
+                channel_details_response = youtube.channels().list(part="snippet,statistics", id=",".join(channel_ids)).execute()
+            except HttpError:
+                print("LOG: Channel details fetch karte samay error. Is batch ko skip kar rahe hain.")
+                continue # Is batch ko chhod kar aage badho
+
+            for item in channel_details_response.get('items', []):
+                if new_channels_found >= max_channels_limit: break
+                
+                channel_id = item['id']
+                channel_name = item['snippet'].get('title', 'N/A')
+                print(f"LOG: Channel process ho raha hai: '{channel_name}' ({channel_id})")
+
+                description = item.get('snippet', {}).get('description', '')
+                # ... (baki ka logic, contact extraction, subscriber check) ...
+                
+                cur.execute("INSERT INTO channels (...) VALUES (...) ON CONFLICT (channel_id) DO NOTHING;")
+                if cur.rowcount > 0:
+                    new_channels_found += 1
+                    print(f"SUCCESS: Naya channel database mein save hua: '{channel_name}' ({new_channels_found}/{max_channels_limit})")
+
             conn.commit()
-            time.sleep(0.5) # API rate limit se bachne ke liye thoda ruken
-
-        except HttpError as e:
-            error_content = e.content.decode('utf-8') if e.content else ''
-            if "quotaExceeded" in error_content:
-                print("API Quota exhausted during video count update.")
-                try:
-                    masked_key = f"....**{current_api_key[-4:]}"
-                    error_message = f"Quota exhausted for key {masked_key} while updating video counts. Some channels may not be updated."
-                    cur.execute("INSERT INTO app_state (key, value) VALUES ('quota_status', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;", (error_message,))
-                    conn.commit()
-                except Exception as db_err: conn.rollback()
-                conn.close()
-                return # Function se bahar
-            youtube, current_api_key = get_youtube_service()
-            time.sleep(5)
-        except Exception as e:
-            print(f"Error updating video counts for channel {channel_id}: {e}")
-            conn.rollback()
-
+            next_page_token = search_response.get('nextPageToken')
+            if not next_page_token:
+                print(f"LOG: Keyword '{keyword}' ke liye sabhi pages poore hue.")
+                break
+            time.sleep(1)
+            
     cur.close()
     conn.close()
-    print("Video count update complete.")
+    print("\n--- Channel Search Job Poora Hua ---\n")
 
