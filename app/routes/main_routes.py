@@ -151,3 +151,24 @@ def download():
     df.to_csv(output, index=False, encoding='utf-8')
     output.seek(0)
     return send_file(output, mimetype='text/csv', as_attachment=True, download_name='youtubers_data.csv')
+
+
+# =========================================================
+# DATABASE SETUP ROUTE (USE ONLY ONCE)
+# =========================================================
+from init_db import initialize_database
+
+@main_bp.route('/setup-database-for-the-first-time-9e7d3f')
+def setup_database():
+    """
+    यह एक गुप्त रूट है जो डेटाबेस में टेबल बनाने के लिए 
+    init_db.py स्क्रिप्ट को चलाता है। इसे केवल एक बार उपयोग करें।
+    """
+    try:
+        initialize_database()
+        flash("DATABASE SETUP SUCCESSFUL! Tables have been created.", "success")
+        return redirect(url_for('main.index'))
+    except Exception as e:
+        flash(f"An error occurred during database setup: {e}", "error")
+        return redirect(url_for('main.index'))
+# =========================================================
