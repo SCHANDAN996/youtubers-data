@@ -4,12 +4,17 @@ import pandas as pd
 import io
 from datetime import datetime, timedelta
 import json
-import threading # <-- थ्रेडिंग मॉड्यूल इम्पोर्ट करें
+import threading
+
+# --- यह इम्पोर्ट केवल एक बार डेटाबेस सेटअप के लिए है ---
+from init_db import initialize_database
 
 main_bp = Blueprint('main', __name__)
 
 def get_quota_status_message():
-    # ... (यह फंक्शन वैसा ही रहेगा) ...
+    """
+    डेटाबेस से API कोटा की स्थिति की जांच करता है।
+    """
     conn = None
     try:
         conn = youtube_service.get_db_connection()
@@ -17,13 +22,17 @@ def get_quota_status_message():
         cur.execute("SELECT value FROM app_state WHERE key = 'quota_status'")
         result = cur.fetchone()
         return result[0] if result else None
-    except Exception: return None
+    except Exception:
+        return None
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
 
 @main_bp.route('/')
 def index():
-    # ... (यह फंक्शन वैसा ही रहेगा) ...
+    """
+    मुख्य सर्च पेज दिखाता है।
+    """
     default_date = (datetime.today() - timedelta(days=90)).strftime('%Y-%m-%d')
     quota_message = get_quota_status_message()
     return render_template('index.html', default_date=default_date, quota_message=quota_message)
@@ -55,37 +64,73 @@ def search():
         flash(f"An error occurred while starting the search: {e}", "error")
         return redirect(url_for('main.index'))
 
-@main_bp.route('/update-video-counts', methods=['POST'])
-def update_video_counts():
-    """
-    यह रूट अभी तक पूरी तरह से लागू नहीं है क्योंकि youtube_service में इसका फंक्शन नहीं है।
-    इसे भी थ्रेडिंग का उपयोग करके बनाया जा सकता है।
-    """
-    flash("Update video counts feature is not fully implemented in this architecture yet.", "info")
-    return jsonify({'success': False, 'message': 'Feature not implemented'})
-
-# ... बाकी के सभी रूट्स (loading, results, download, delete, etc.) वैसे ही रहेंगे ...
-
 @main_bp.route('/loading')
 def loading():
+    """
+    सर्च के दौरान लोडिंग पेज दिखाता है।
+    """
     quota_message = get_quota_status_message()
     return render_template('loading.html', quota_message=quota_message)
 
 @main_bp.route('/results')
 def results():
+    """
+    डेटाबेस से मिले चैनलों को सॉर्टिंग और फिल्टरिंग के साथ दिखाता है।
+    """
     quota_message = get_quota_status_message()
     conn = youtube_service.get_db_connection()
     cur = conn.cursor()
-    # ... (बाकी का कोड वैसा ही रहेगा) ...
-    cur.execute("SELECT channel_id, channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count FROM channels ORDER BY retrieved_at DESC")
+
+    sort_by = request.args.get('sort_by', 'retrieved_at')
+    sort_order = request.args.get('sort_order', 'DESC')
+    search_query = request.args.get('query', '').strip()
+    filter_category = request.args.get('category_filter', '').strip()
+
+    sql_query = "SELECT channel_id, channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count, retrieved_at FROM channels"
+    
+    where_clauses, params = [], {}
+    if search_query:
+        where_clauses.append("(channel_name ILIKE %(q)s OR emails ILIKE %(q)s)")
+        params['q'] = f'%{search_query}%'
+    if filter_category:
+        where_clauses.append("category = %(cat)s")
+        params['cat'] = filter_category
+
+    if where_clauses:
+        sql_query += " WHERE " + " AND ".join(where_clauses)
+    
+    allowed_sort = {'retrieved_at', 'subscriber_count', 'category', 'creation_date', 'short_videos_count', 'long_videos_count'}
+    if sort_by not in allowed_sort:
+        sort_by = 'retrieved_at'
+    if sort_order.upper() not in ['ASC', 'DESC']:
+        sort_order = 'DESC'
+        
+    sql_query += f" ORDER BY {sort_by} {sort_order}"
+    
+    cur.execute(sql_query, params)
     channels = cur.fetchall()
     cur.close()
     conn.close()
-    return render_template('results.html', channels=channels, channel_count=len(channels), quota_message=quota_message)
+    
+    all_categories = list(youtube_service.CATEGORY_KEYWORDS.keys())
+    
+    return render_template(
+        'results.html', 
+        channels=channels, 
+        channel_count=len(channels), 
+        all_categories=all_categories, 
+        current_sort_by=sort_by, 
+        current_sort_order=sort_order, 
+        current_search_query=search_query, 
+        current_filter_category=filter_category, 
+        quota_message=quota_message
+    )
 
 @main_bp.route('/update_status', methods=['POST'])
 def update_status():
-    # ... (यह फंक्शन वैसा ही रहेगा) ...
+    """
+    AJAX कॉल के माध्यम से एक चैनल की स्थिति को अपडेट करता है।
+    """
     try:
         data = request.get_json()
         conn = youtube_service.get_db_connection()
@@ -100,16 +145,20 @@ def update_status():
 
 @main_bp.route('/delete', methods=['POST'])
 def delete():
-    # ... (यह फंक्शन वैसा ही रहेगा) ...
+    """
+    एक या सभी चैनलों को डिलीट करता है।
+    """
     conn = youtube_service.get_db_connection()
     cur = conn.cursor()
     payload = request.get_json()
     delete_type = payload.get('type')
+    
     if delete_type == 'all':
         cur.execute("TRUNCATE TABLE channels RESTART IDENTITY;")
         flash("All channels have been deleted.", "success")
     elif delete_type == 'single':
         cur.execute("DELETE FROM channels WHERE channel_id = %s", (payload.get('channel_id'),))
+        
     conn.commit()
     cur.close()
     conn.close()
@@ -117,12 +166,33 @@ def delete():
 
 @main_bp.route('/download')
 def download():
-    # ... (यह फंक्शन वैसा ही रहेगा) ...
+    """
+    सभी डेटा को एक CSV फ़ाइल के रूप में डाउनलोड करता है।
+    """
     conn = youtube_service.get_db_connection()
     df = pd.read_sql_query("SELECT channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count, description, creation_date, retrieved_at FROM channels ORDER BY subscriber_count DESC", conn)
     conn.close()
+    
     output = io.BytesIO()
     df.to_csv(output, index=False, encoding='utf-8')
     output.seek(0)
+    
     return send_file(output, mimetype='text/csv', as_attachment=True, download_name='youtubers_data.csv')
 
+# =========================================================
+# DATABASE SETUP ROUTE (USE ONLY ONCE, THEN REMOVE)
+# =========================================================
+@main_bp.route('/setup-database-for-the-first-time-9e7d3f')
+def setup_database():
+    """
+    यह एक गुप्त रूट है जो डेटाबेस में टेबल बनाने के लिए 
+    init_db.py स्क्रिप्ट को चलाता है। इसे केवल एक बार उपयोग करें।
+    """
+    try:
+        initialize_database()
+        flash("DATABASE SETUP SUCCESSFUL! Tables have been created.", "success")
+        return redirect(url_for('main.index'))
+    except Exception as e:
+        flash(f"An error occurred during database setup: {e}", "error")
+        return redirect(url_for('main.index'))
+# =========================================================
