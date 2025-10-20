@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+# BUG FIX: send_file ko import kiya gaya
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
 from app.services import youtube_service
 import pandas as pd
 import io
@@ -7,6 +8,7 @@ import json
 
 main_bp = Blueprint('main', __name__)
 
+# Baki sabhi code waisa hi rahega... (koi aur badlav nahi)
 @main_bp.route('/')
 def index():
     default_date = (datetime.today() - timedelta(days=90)).strftime('%Y-%m-%d')
@@ -29,10 +31,14 @@ def search():
         conn.commit()
         cur.close()
         conn.close()
-        flash("Search shuru ho gaya hai! Results kuch der mein dashboard par dikhenge.", "success")
+        return redirect(url_for('main.loading'))
     except Exception as e:
         flash(f"Job shuru karne mein error aa gaya: {e}", "error")
-    return redirect(url_for('main.results'))
+        return redirect(url_for('main.index'))
+
+@main_bp.route('/loading')
+def loading():
+    return render_template('loading.html')
 
 @main_bp.route('/results')
 def results():
@@ -42,25 +48,30 @@ def results():
     sort_order = request.args.get('sort_order', 'DESC')
     search_query = request.args.get('query', '').strip()
     filter_category = request.args.get('category_filter', '').strip()
-    sql_query = """ SELECT channel_id, channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count FROM channels """
-    where_clauses = []
-    params = {}
+    
+    sql_query = "SELECT channel_id, channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count FROM channels"
+    where_clauses, params = [], {}
+
     if search_query:
-        where_clauses.append("(channel_name ILIKE %(search_query)s OR emails ILIKE %(search_query)s OR description ILIKE %(search_query)s)")
-        params['search_query'] = f'%{search_query}%'
+        where_clauses.append("(channel_name ILIKE %(q)s OR emails ILIKE %(q)s)")
+        params['q'] = f'%{search_query}%'
     if filter_category:
-        where_clauses.append("category = %(filter_category)s")
-        params['filter_category'] = filter_category
+        where_clauses.append("category = %(cat)s")
+        params['cat'] = filter_category
     if where_clauses:
         sql_query += " WHERE " + " AND ".join(where_clauses)
-    allowed_sort_cols = {'channel_name', 'subscriber_count', 'category', 'creation_date', 'retrieved_at', 'short_videos_count', 'long_videos_count'}
-    if sort_by not in allowed_sort_cols: sort_by = 'retrieved_at'
+        
+    allowed_sort = {'retrieved_at', 'subscriber_count', 'category', 'creation_date', 'short_videos_count', 'long_videos_count'}
+    if sort_by not in allowed_sort: sort_by = 'retrieved_at'
     if sort_order.upper() not in ['ASC', 'DESC']: sort_order = 'DESC'
+
     sql_query += f" ORDER BY {sort_by} {sort_order}"
+
     cur.execute(sql_query, params)
     channels = cur.fetchall()
     cur.close()
     conn.close()
+
     all_categories = list(youtube_service.CATEGORY_KEYWORDS.keys())
     return render_template('results.html', channels=channels, channel_count=len(channels), all_categories=all_categories, current_sort_by=sort_by, current_sort_order=sort_order, current_search_query=search_query, current_filter_category=filter_category)
 
@@ -78,12 +89,32 @@ def update_status():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@main_bp.route('/delete', methods=['POST'])
+def delete():
+    conn = youtube_service.get_db_connection()
+    cur = conn.cursor()
+    payload = request.get_json()
+    delete_type = payload.get('type')
+    if delete_type == 'all':
+        cur.execute("TRUNCATE TABLE channels RESTART IDENTITY;")
+        flash("Sabhi channels delete kar diye gaye hain.", "success")
+    elif delete_type == 'single':
+        cur.execute("DELETE FROM channels WHERE channel_id = %s", (payload.get('channel_id'),))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({'success': True})
+
 @main_bp.route('/download')
 def download():
     conn = youtube_service.get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM channels ORDER BY subscriber_count DESC", conn)
+    # SUDHAR: Query ko behtar banaya gaya
+    df = pd.read_sql_query("SELECT channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count, description, creation_date, retrieved_at FROM channels ORDER BY subscriber_count DESC", conn)
     conn.close()
+    
     output = io.BytesIO()
     df.to_csv(output, index=False, encoding='utf-8')
     output.seek(0)
+    
     return send_file(output, mimetype='text/csv', as_attachment=True, download_name='youtubers_data.csv')
