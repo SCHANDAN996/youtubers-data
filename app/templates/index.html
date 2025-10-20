@@ -1,90 +1,97 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search - YouTubers Data Tool</title>
-    <!-- CSS file ko link kiya gaya hai -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body class="form-container">
-    <div class="container form-panel">
-         <!-- Dark Mode Toggle -->
-         <div class="theme-switch-wrapper" style="position: absolute; top: 15px; right: 15px;">
-            <span style="color: var(--label-color);">☀️</span>
-            <label class="theme-switch" for="theme-toggle">
-                <input type="checkbox" id="theme-toggle" />
-                <div class="slider"></div>
-            </label>
-            <span style="color: var(--label-color);">🌙</span>
-        </div>
-        <div class="panel">
-            <h1>YouTubers Data Tool</h1>
-            <!-- Search form ab 'main.search' route par jaayega -->
-            <form action="{{ url_for('main.search') }}" method="post">
-                <div class="form-grid">
-                    <div>
-                        <label for="category">Category:</label>
-                        <select id="category" name="category">
-                            <option value="Technology">Technology</option>
-                            <option value="Gaming">Gaming</option>
-                            <option value="Finance">Finance</option>
-                            <option value="Education">Education</option>
-                            <option value="Comedy">Comedy</option>
-                            <option value="Vlogging">Vlogging</option>
-                            <option value="YouTube related">YouTube related</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="start_date">Channels created after:</label>
-                        <input type="date" id="start_date" name="start_date" value="{{ default_date }}">
-                    </div>
-                    <div>
-                        <label for="min_subs">Min Subscribers:</label>
-                        <input type="number" id="min_subs" name="min_subs" value="1000">
-                    </div>
-                    <div>
-                        <label for="max_subs">Max Subscribers:</label>
-                        <input type="number" id="max_subs" name="max_subs" value="50000">
-                    </div>
-                    <div class="full-width">
-                        <label for="max_channels">Max new channels to find:</label>
-                        <input type="number" id="max_channels" name="max_channels" value="50">
-                    </div>
-                    <div class="full-width">
-                         <label class="checkbox-label">
-                            <input type="checkbox" name="require_contact">
-                            Only find channels with Email or Phone
-                        </label>
-                    </div>
-                    <button type="submit">Start Search & View Results</button>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Search - YouTubers Data Tool</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    </head>
+    <body class="form-container">
+        <div class="container form-panel">
+
+            <div class="theme-switch-wrapper" style="position: absolute; top: 15px; right: 15px;">
+                <span style="color: var(--label-color);">☀️</span>
+                <label class="theme-switch" for="theme-toggle">
+                    <input type="checkbox" id="theme-toggle" />
+                    <div class="slider"></div>
+                </label>
+                <span style="color: var(--label-color);">🌙</span>
+            </div>
+
+            <div class="panel">
+                {% if quota_message %}
+                <div class="flash error" style="margin-bottom: 20px; text-align: center;">
+                    <strong>🚨 API Status Alert:</strong> {{ quota_message }}
                 </div>
-            </form>
-             <div class="view-data-link">
-                <!-- Link ab 'main.results' route par jaayega -->
-                <a href="{{ url_for('main.results') }}">View All Saved Data</a>
+                {% endif %}
+
+                <h1>YouTubers Data Tool</h1>
+                <form action="{{ url_for('main.search') }}" method="post">
+                    <div class="form-grid">
+                        <div>
+                            <label for="category">Category:</label>
+                            <select id="category" name="category">
+                                <option value="Technology">Technology</option>
+                                <option value="Gaming">Gaming</option>
+                                <option value="Finance">Finance</option>
+                                <option value="Education">Education</option>
+                                <option value="Comedy">Comedy</option>
+                                <option value="Vlogging">Vlogging</option>
+                                <option value="YouTube related">YouTube related</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="start_date">Channels created after:</label>
+                            <input type="date" id="start_date" name="start_date" value="{{ default_date }}">
+                        </div>
+                        <div>
+                            <label for="min_subs">Min Subscribers:</label>
+                            <input type="number" id="min_subs" name="min_subs" value="1000">
+                        </div>
+                        <div>
+                            <label for="max_subs">Max Subscribers:</label>
+                            <input type="number" id="max_subs" name="max_subs" value="50000">
+                        </div>
+                        <div class="full-width">
+                            <label for="max_channels">Max new channels to find:</label>
+                            <input type="number" id="max_channels" name="max_channels" value="50">
+                        </div>
+                        <div class="full-width">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="require_contact" checked>
+                                Only find channels with Email or Phone
+                            </label>
+                        </div>
+                        <button type="submit">Start Search</button>
+                    </div>
+                </form>
+
+                <div class="view-data-link">
+                    <a href="{{ url_for('main.results') }}">View All Saved Data</a>
+                </div>
             </div>
         </div>
-    </div>
-    <script>
-        // Dark mode ka JavaScript logic
-        const themeToggle = document.getElementById('theme-toggle');
-        const currentTheme = localStorage.getItem('theme');
-        if (currentTheme) {
-            document.documentElement.setAttribute('data-theme', currentTheme);
-            if (currentTheme === 'dark') { themeToggle.checked = true; }
-        }
-        themeToggle.addEventListener('change', function() {
-            if (this.checked) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                localStorage.setItem('theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-                localStorage.setItem('theme', 'light');
+
+        <script>
+            const themeToggle = document.getElementById('theme-toggle');
+            const currentTheme = localStorage.getItem('theme');
+            
+            if (currentTheme) {
+                document.documentElement.setAttribute('data-theme', currentTheme);
+                if (currentTheme === 'dark') { 
+                    themeToggle.checked = true; 
+                }
             }
-        });
-    </script>
-</body>
+
+            themeToggle.addEventListener('change', function() {
+                if (this.checked) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    localStorage.setItem('theme', 'light');
+                }
+            });
+        </script>
+    </body>
 </html>
-
-
