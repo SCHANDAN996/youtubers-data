@@ -6,8 +6,8 @@ from googleapiclient.discovery import build
 import psycopg2
 import google.generativeai as genai
 from googleapiclient.errors import HttpError
-# Email notification service ko hata diya gaya hai
 
+# ... (API Key and Category Keywords setup will remain the same) ...
 # API Key Setup
 YOUTUBE_API_KEYS = os.getenv('YOUTUBE_API_KEYS', '').split(',')
 youtube_key_index = 0
@@ -26,14 +26,14 @@ CATEGORY_KEYWORDS = {
     "YouTube related": "youtube growth tips, how to grow youtube channel, youtube seo, 1000 subscribers kaise badhaye, 4000 watch time kaise kare, youtube studio tutorial, vidiq tutorial, tubebuddy tutorial, youtube policies hindi, monetize youtube channel, youtube earning tips, youtube shorts strategy, video editing for youtube, thumbnail tutorial, digital marketing for creators, content creation tips"
 }
 
+
 def get_db_connection():
     return psycopg2.connect(os.getenv('DATABASE_URL'))
 
+# ... (init_db, analyze_channel_with_ai, extract_details, get_video_counts functions will remain the same) ...
 def init_db():
-    # SUDHAR: app_state table banane ke liye command joda gaya
     conn = get_db_connection()
     cur = conn.cursor()
-    # Channels table (existing)
     cur.execute('''
     CREATE TABLE IF NOT EXISTS channels (
         id SERIAL PRIMARY KEY, channel_id VARCHAR(255) UNIQUE NOT NULL, channel_name TEXT NOT NULL,
@@ -43,38 +43,30 @@ def init_db():
         instagram_link TEXT, twitter_link TEXT, linkedin_link TEXT,
         short_videos_count INTEGER DEFAULT 0, long_videos_count INTEGER DEFAULT 0
     );''')
-    # Jobs table (existing)
     cur.execute('''
     CREATE TABLE IF NOT EXISTS jobs (
         id SERIAL PRIMARY KEY, params JSONB NOT NULL, status VARCHAR(50) DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, started_at TIMESTAMP, finished_at TIMESTAMP
     );''')
-    # SUDHAR: Notification ke liye nayi table
     cur.execute('''
     CREATE TABLE IF NOT EXISTS app_state (
-        key VARCHAR(50) PRIMARY KEY,
-        value TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        key VARCHAR(50) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );''')
     conn.commit()
     cur.close()
     conn.close()
     print("Database tables checked/created.")
 
-
 def get_youtube_service():
     global youtube_key_index
     if not any(YOUTUBE_API_KEYS) or YOUTUBE_API_KEYS == ['']:
         raise ValueError("YouTube API keys are not configured.")
-    
     api_key = YOUTUBE_API_KEYS[youtube_key_index]
     print(f"Using API Key index: {youtube_key_index}")
     youtube_key_index = (youtube_key_index + 1) % len(YOUTUBE_API_KEYS)
     service = build('youtube', 'v3', developerKey=api_key)
-    # SUDHAR: Ab hum service ke saath-saath key bhi return karenge
     return service, api_key
 
-# Baki ke functions (analyze_channel_with_ai, extract_details, get_video_counts) waise hi rahenge...
 def analyze_channel_with_ai(description):
     if not GEMINI_API_KEY: return "AI Not Configured", "N/A", "N/A"
     try:
@@ -110,53 +102,40 @@ def get_video_counts(youtube_service, channel_id):
         print(f"Error fetching video counts for channel {channel_id}: {e}")
         return 0, 0
 
+
 def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, require_contact):
+    # SUDHAR: Is function se video count aur AI analysis ka call hata diya gaya hai
     keywords = CATEGORY_KEYWORDS.get(category, category)
     search_after_date = datetime.strptime(date_after, '%Y-%m-%d').strftime('%Y-%m-%dT%H:%M:%SZ')
-    
     conn = get_db_connection()
     cur = conn.cursor()
-
-    # SUDHAR: Naya kaam shuru hone par purana quota message hata dein
     try:
         cur.execute("DELETE FROM app_state WHERE key = 'quota_status'")
         conn.commit()
-        print("Purana quota status message (agar tha to) clear kar diya gaya.")
     except Exception as db_err:
         print(f"Purana quota status clear karne mein error: {db_err}")
         conn.rollback()
 
     new_channels_found = 0
     processed_channel_ids = set()
-    
     cur.execute("SELECT channel_id FROM channels")
     existing_ids = {row[0] for row in cur.fetchall()}
     processed_channel_ids.update(existing_ids)
-
     youtube, current_api_key = get_youtube_service()
 
     for keyword in keywords.split(','):
-        keyword = keyword.strip()
-        if not keyword or new_channels_found >= max_channels_limit:
-            break
-        
+        if not keyword or new_channels_found >= max_channels_limit: break
         print(f"'{keyword}' keyword ke liye search kiya ja raha hai...")
         next_page_token = None
-        
         while new_channels_found < max_channels_limit:
             try:
-                # ... baki search logic waisa hi rahega ...
-                search_request = youtube.search().list(q=keyword, part="snippet", type="channel", maxResults=50, publishedAfter=search_after_date, pageToken=next_page_token)
-                search_response = search_request.execute()
-                channel_ids_from_search = [item['snippet']['channelId'] for item in search_response.get('items', [])]
-                new_unique_ids = [cid for cid in channel_ids_from_search if cid not in processed_channel_ids]
-                if not new_unique_ids: break
-                processed_channel_ids.update(new_unique_ids)
-                channel_details_request = youtube.channels().list(part="snippet,statistics", id=",".join(new_unique_ids))
-                channel_details_response = channel_details_request.execute()
+                search_request = youtube.search().list(q=keyword, part="snippet", type="channel", maxResults=50, publishedAfter=search_after_date, pageToken=next_page_token).execute()
+                channel_ids = [item['snippet']['channelId'] for item in search_response.get('items', []) if item['snippet']['channelId'] not in processed_channel_ids]
+                if not channel_ids: break
+                processed_channel_ids.update(channel_ids)
+                channel_details_response = youtube.channels().list(part="snippet,statistics", id=",".join(channel_ids)).execute()
 
                 for item in channel_details_response.get('items', []):
-                    # ... baki channel processing logic waisa hi rahega ...
                     if new_channels_found >= max_channels_limit: break
                     description = item.get('snippet', {}).get('description', '')
                     details = extract_details(description)
@@ -165,61 +144,90 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, 
                     if not stats.get('hiddenSubscriberCount', False):
                         subscriber_count = int(stats.get('subscriberCount', 0))
                         if min_subs <= subscriber_count <= max_subs:
-                            ai_summary, ai_tone, ai_audience = analyze_channel_with_ai(description[:5000])
-                            shorts_count, long_videos_count = get_video_counts(youtube, item['id'])
-                            channel_info = { "channel_id": item['id'], "channel_name": item['snippet'].get('title'), "subscriber_count": subscriber_count, "creation_date": item['snippet'].get('publishedAt', '')[:10], "emails": details['emails'], "phone_numbers": details['phones'], "description": description, "category": category, "ai_summary": ai_summary, "ai_tone": ai_tone, "ai_audience": ai_audience, "instagram_link": details['instagram'], "twitter_link": details['twitter'], "linkedin_link": details['linkedin'], "short_videos_count": shorts_count, "long_videos_count": long_videos_count }
-                            cur.execute(""" INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category, ai_summary, ai_tone, ai_audience, instagram_link, twitter_link, linkedin_link, short_videos_count, long_videos_count) VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s, %(ai_summary)s, %(ai_tone)s, %(ai_audience)s, %(instagram_link)s, %(twitter_link)s, %(linkedin_link)s, %(short_videos_count)s, %(long_videos_count)s) ON CONFLICT (channel_id) DO NOTHING; """, channel_info)
+                            # video_counts aur AI analysis yahan se HATA diya gaya hai
+                            channel_info = {
+                                "channel_id": item['id'], "channel_name": item['snippet'].get('title'),
+                                "subscriber_count": subscriber_count, "creation_date": item['snippet'].get('publishedAt', '')[:10],
+                                "emails": details['emails'], "phone_numbers": details['phones'], "description": description,
+                                "category": category, "instagram_link": details['instagram'], "twitter_link": details['twitter'],
+                                "linkedin_link": details['linkedin']
+                            }
+                            cur.execute("""
+                                INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category, instagram_link, twitter_link, linkedin_link)
+                                VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s, %(instagram_link)s, %(twitter_link)s, %(linkedin_link)s)
+                                ON CONFLICT (channel_id) DO NOTHING;
+                            """, channel_info)
                             if cur.rowcount > 0:
                                 new_channels_found += 1
                                 print(f"Naya channel mila: {channel_info['channel_name']} ({new_channels_found}/{max_channels_limit})")
-                
                 conn.commit()
                 next_page_token = search_response.get('nextPageToken')
                 if not next_page_token: break
                 time.sleep(1)
-
             except HttpError as e:
+                # ... (Error handling logic waisi hi rahegi) ...
                 error_content = e.content.decode('utf-8') if e.content else ''
-                reason = "unknown"
                 if "quotaExceeded" in error_content:
-                    reason = "quotaExceeded"
-
-                print(f"Ek HTTP error aayi '{keyword}' ke saath: {e}")
-                if reason == 'quotaExceeded':
-                    print("API Quota khatm ho gaya. Database mein status update kiya ja raha hai...")
-                    
-                    # SUDHAR: Yahan par database mein message save karenge
                     try:
-                        # API key ke aakhiri 4 anko ko dikhane ke liye format karein
                         masked_key = f"....**{current_api_key[-4:]}"
-                        error_message = f"Quota exhausted for key {masked_key} on {datetime.now().strftime('%Y-%m-%d %H:%M')}. Searches are paused until the quota resets."
-                        
-                        # Database mein save karein
-                        cur.execute("""
-                            INSERT INTO app_state (key, value, updated_at)
-                            VALUES ('quota_status', %s, CURRENT_TIMESTAMP)
-                            ON CONFLICT (key) DO UPDATE
-                            SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP;
-                        """, (error_message,))
+                        error_message = f"Quota exhausted for key {masked_key} on {datetime.now().strftime('%Y-%m-%d %H:%M')}. Searches are paused."
+                        cur.execute("INSERT INTO app_state (key, value) VALUES ('quota_status', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;", (error_message,))
                         conn.commit()
-                        print("Quota status message database mein save kar diya gaya.")
-
-                    except Exception as db_err:
-                        print(f"Quota status save karne mein error: {db_err}")
-                        conn.rollback()
-
-                    print("Worker ruk raha hai.")
+                    except Exception as db_err: conn.rollback()
                     conn.close()
                     return
-                
-                youtube, current_api_key = get_youtube_service() # Key badlo
+                youtube, current_api_key = get_youtube_service()
                 time.sleep(5)
             except Exception as e:
-                print(f"Ek anjaan error aayi '{keyword}' keyword ke saath: {e}")
-                time.sleep(10)
+                print(f"Anjaan error: {e}")
                 break
-    
     cur.close()
     conn.close()
     print("Search poora hua.")
+
+
+def update_video_counts_for_channels(channel_ids):
+    """
+    Naya function: Di gayi channel IDs ke liye video counts fetch aur update karta hai.
+    """
+    print(f"Updating video counts for {len(channel_ids)} channels...")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    youtube, current_api_key = get_youtube_service()
+
+    for i, channel_id in enumerate(channel_ids):
+        try:
+            print(f"Processing {i+1}/{len(channel_ids)}: {channel_id}")
+            shorts_count, long_videos_count = get_video_counts(youtube, channel_id)
+            
+            cur.execute("""
+                UPDATE channels
+                SET short_videos_count = %s, long_videos_count = %s
+                WHERE channel_id = %s;
+            """, (shorts_count, long_videos_count, channel_id))
+            
+            conn.commit()
+            time.sleep(0.5) # API rate limit se bachne ke liye thoda ruken
+
+        except HttpError as e:
+            error_content = e.content.decode('utf-8') if e.content else ''
+            if "quotaExceeded" in error_content:
+                print("API Quota exhausted during video count update.")
+                try:
+                    masked_key = f"....**{current_api_key[-4:]}"
+                    error_message = f"Quota exhausted for key {masked_key} while updating video counts. Some channels may not be updated."
+                    cur.execute("INSERT INTO app_state (key, value) VALUES ('quota_status', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;", (error_message,))
+                    conn.commit()
+                except Exception as db_err: conn.rollback()
+                conn.close()
+                return # Function se bahar
+            youtube, current_api_key = get_youtube_service()
+            time.sleep(5)
+        except Exception as e:
+            print(f"Error updating video counts for channel {channel_id}: {e}")
+            conn.rollback()
+
+    cur.close()
+    conn.close()
+    print("Video count update complete.")
 
