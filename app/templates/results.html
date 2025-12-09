@@ -56,6 +56,9 @@
                                 <th>Category</th>
                                 <th>Emails</th>
                                 <th>Phones</th>
+                                <th>Insta</th>
+                                <th>Twitter</th>
+                                <th>LinkedIn</th>
                                 <th>Shorts</th>
                                 <th>Long Videos</th>
                                 <th>Status</th>
@@ -67,12 +70,33 @@
                             <tr data-channel-id="{{ channel[0] }}">
                                 <td><input type="checkbox" class="channel-checkbox" value="{{ channel[0] }}"></td>
                                 <td>{{ channel[1] }}</td>
-                                <td>{{ channel[2] }}</td>
+                                <td>{{ channel[2] | int | default('N/A') }}</td>
                                 <td>{{ channel[3] }}</td>
-                                <td>{{ channel[4] }}</td>
-                                <td>{{ channel[5] }}</td>
+                                <td>{{ channel[4] if channel[4] and channel[4].strip() else 'N/A' }}</td>
+                                <td>{{ channel[5] if channel[5] and channel[5].strip() else 'N/A' }}</td>
+                                <td>
+                                    {% if channel[6] %}
+                                        <a href="{{ channel[6] }}" target="_blank" class="social-link">View</a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if channel[7] %}
+                                        <a href="{{ channel[7] }}" target="_blank" class="social-link">View</a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if channel[8] %}
+                                        <a href="{{ channel[8] }}" target="_blank" class="social-link">View</a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                                <td>{{ channel[9] if channel[9] is not none else 'N/A' }}</td>
                                 <td>{{ channel[10] if channel[10] is not none else 'N/A' }}</td>
-                                <td>{{ channel[11] if channel[11] is not none else 'N/A' }}</td>
                                 <td>
                                     <select class="status-select" onchange="updateStatus(this)">
                                         <option value="New" {% if channel[9] == 'New' %}selected{% endif %}>New</option>
@@ -88,7 +112,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="10" style="text-align: center;">No data found. Start a new search!</td>
+                                <td colspan="13" style="text-align: center;">No data found. Start a new search!</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -183,7 +207,8 @@
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            window.location.reload();
+                            // Sarch thread ki tarah, loading page par redirect karein
+                            window.location.href = "{{ url_for('main.loading') }}"; 
                         } else {
                             alert('Failed to start update job: ' + data.message);
                             updateBtn.disabled = false;
