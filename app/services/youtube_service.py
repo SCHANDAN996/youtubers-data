@@ -37,13 +37,30 @@ class YouTubeServiceManager:
 def get_db_connection():
     return psycopg2.connect(os.getenv('DATABASE_URL'))
 
+# SUDHAR: extract_details mein social media links ka extraction joda gaya hai
 def extract_details(description):
-    """Description se email aur phone number nikalta hai."""
+    """Description se email, phone aur social media links nikalta hai."""
     emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', description)))
     phones = list(set(re.findall(r'(?:\+91)?[ -]?(?:[6-9]\d{2}[ -]?\d{3}[ -]?\d{4}|\d{10})', description)))
-    return {"emails": ", ".join(emails), "phones": ", ".join(phones)}
+    
+    instagram = re.search(r'(?:instagram\.com\/|ig:)([a-zA-Z0-9._]+)', description, re.IGNORECASE)
+    twitter = re.search(r'(?:twitter\.com\/|x\.com\/|@)([a-zA-Z0-9_]+)', description, re.IGNORECASE)
+    linkedin = re.search(r'(?:linkedin\.com\/in\/)([a-zA-Z0-9-]+)', description, re.IGNORECASE)
 
-# Category Keywords
+    # Links ko URL format mein store karein ya sirf username
+    instagram_link = f"https://www.instagram.com/{instagram.group(1)}" if instagram else None
+    twitter_link = f"https://twitter.com/{twitter.group(1)}" if twitter else None
+    linkedin_link = f"https://www.linkedin.com/in/{linkedin.group(1)}" if linkedin else None
+    
+    return {
+        "emails": ", ".join(emails), 
+        "phones": ", ".join(phones),
+        "instagram_link": instagram_link,
+        "twitter_link": twitter_link,
+        "linkedin_link": linkedin_link,
+    }
+
+# Category Keywords (koi badlav nahi)
 CATEGORY_KEYWORDS = {
     "Technology": "hindi tech, gadgets review, unboxing, mobile review, laptop review, tech news india, smartphone tips, android tricks, iphone tricks, programming hindi, python hindi, pc build india, latest gadgets, ai explained hindi, software development, cyber security awareness, tech tips and tricks, saste gadgets, tech channel",
     "Gaming": "gaming india, live gameplay, mobile gaming, pc games, bgmi live, valorant india, free fire gameplay, gta v hindi, minecraft hindi, gaming shorts, gaming channel, best android games, gaming pc build, ps5 india, pro gamer, gaming highlights, game walkthrough hindi, op gameplay",
@@ -53,6 +70,119 @@ CATEGORY_KEYWORDS = {
     "Vlogging": "daily vlog, lifestyle vlog, travel vlogger india, india travel vlog, mountain vlog, goa vlog, budget travel, moto vlogging india, food vlog, shopping haul, village life vlog, family vlog, couple vlog, a day in my life, my first vlog",
     "YouTube related": "youtube growth tips, how to grow youtube channel, youtube seo, 1000 subscribers kaise badhaye, 4000 watch time kaise kare, youtube studio tutorial, vidiq tutorial, tubebuddy tutorial, youtube policies hindi, monetize youtube channel, youtube earning tips, youtube shorts strategy, video editing for youtube, thumbnail tutorial, digital marketing for creators, content creation tips"
 }
+
+
+# --- SUDHAR: update_video_counts function implement kiya gaya hai ---
+def update_video_counts(channel_ids):
+    """Chune hue channels ke Shorts aur Long Videos ki ginti karta hai."""
+    print(f"\n--- Update Video Counts Job Shuru Hua ({len(channel_ids)} channels) ---")
+    
+    try:
+        yt_manager = YouTubeServiceManager(YOUTUBE_API_KEYS)
+    except ValueError as e:
+        print(f"FATAL ERROR: {e}")
+        return
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    for channel_id in channel_ids:
+        try:
+            # 1. Channel details se uploads playlist ID nikalna
+            channel_response = yt_manager.service.channels().list(
+                part="contentDetails,snippet",
+                id=channel_id
+            ).execute()
+
+            if not channel_response.get('items'):
+                print(f"LOG: Channel ID {channel_id} nahi mila. Skip kar rahe hain.")
+                continue
+
+            item = channel_response['items'][0]
+            channel_name = item['snippet']['title']
+            uploads_playlist_id = item['contentDetails']['relatedPlaylists']['uploads']
+
+            print(f"LOG: '{channel_name}' ({channel_id}) ki video ginti shuru.")
+            
+            shorts_count = 0
+            long_videos_count = 0
+            
+            # 2. Uploads playlist ke items ko traverse karna
+            next_page_token = None
+            total_videos_processed = 0
+            
+            while True:
+                try:
+                    playlist_response = yt_manager.service.playlistItems().list(
+                        playlistId=uploads_playlist_id,
+                        part="contentDetails",
+                        maxResults=50, # Har baar 50 videos
+                        pageToken=next_page_token
+                    ).execute()
+                except HttpError as e:
+                    # Agar playlist items fetch karte waqt error aaye, to key switch ya skip
+                    print(f"LOG: Playlist fetch error for {channel_name}: {e.reason}. Skipping channel.")
+                    break
+                
+                video_ids = [item['contentDetails']['videoId'] for item in playlist_response.get('items', [])]
+                if not video_ids:
+                    break # Agar aur videos na hon
+                
+                # 3. Videos ki details (duration) fetch karna
+                video_response = None
+                try:
+                    video_response = yt_manager.service.videos().list(
+                        part="contentDetails",
+                        id=",".join(video_ids)
+                    ).execute()
+                except HttpError as e:
+                    print(f"LOG: Video details fetch error for {channel_name}: {e.reason}. Skipping batch.")
+                    # Agar video details fetch karte waqt error aaye, to agle channel par chale jayenge
+                    break 
+                    
+                for video_item in video_response.get('items', []):
+                    # Duration format: PT#M#S
+                    duration_str = video_item['contentDetails']['duration']
+                    
+                    # 'PT' ko hata dein
+                    duration_str = duration_str[2:] 
+                    
+                    # Seconds mein convert karne ka ek aasaan tarika (Shorts < 60 seconds hote hain)
+                    # Simple check: Agar duration mein 'M' ya 'H' nahi hai aur 'S' ka count 60 se kam hai, toh short.
+                    is_short = ('M' not in duration_str and 'H' not in duration_str and 
+                                (int(re.search(r'(\d+)S', duration_str).group(1)) if re.search(r'(\d+)S', duration_str) else 0) < 60)
+                    
+                    if is_short:
+                        shorts_count += 1
+                    else:
+                        long_videos_count += 1
+
+                total_videos_processed += len(video_ids)
+                print(f"  Processed {total_videos_processed} videos...")
+
+                next_page_token = playlist_response.get('nextPageToken')
+                if not next_page_token:
+                    break
+                time.sleep(0.5) # API Quota ka dhyan rakhte hue thoda wait
+
+            # 4. Database mein update karna
+            cur.execute("""
+                UPDATE channels 
+                SET short_videos_count = %s, long_videos_count = %s, retrieved_at = CURRENT_TIMESTAMP
+                WHERE channel_id = %s;
+            """, (shorts_count, long_videos_count, channel_id))
+            conn.commit()
+            print(f"SUCCESS: '{channel_name}' updated. Shorts: {shorts_count}, Long: {long_videos_count}")
+
+        except Exception as e:
+            print(f"ERROR: Channel {channel_id} update karte samay anjaan error: {e}")
+            conn.rollback()
+            
+    cur.close()
+    conn.close()
+    print("\n--- Update Video Counts Job Poora Hua ---\n")
+# --- Update Video Counts function end ---
+
 
 def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, require_contact):
     print("\n--- Naya Channel Search Job Shuru Hua ---")
@@ -149,7 +279,9 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, 
                 channel_name = item['snippet'].get('title', 'N/A')
                 
                 description = item.get('snippet', {}).get('description', '')
-                details = extract_details(description)
+                # SUDHAR: Ab yeh social media links bhi niklega
+                details = extract_details(description) 
+                
                 if require_contact and not (details['emails'] or details['phones']):
                     print(f"LOG: Skip - '{channel_name}' ke paas contact info nahi hai.")
                     continue
@@ -168,11 +300,15 @@ def find_channels(category, date_after, min_subs, max_subs, max_channels_limit, 
                 channel_info = {
                     "channel_id": channel_id, "channel_name": channel_name, "subscriber_count": subscriber_count,
                     "creation_date": item['snippet'].get('publishedAt', '')[:10], "emails": details['emails'],
-                    "phone_numbers": details['phones'], "description": description, "category": category
+                    "phone_numbers": details['phones'], "description": description, "category": category,
+                    # SUDHAR: Naye social media fields jode gaye
+                    "instagram_link": details['instagram_link'],
+                    "twitter_link": details['twitter_link'],
+                    "linkedin_link": details['linkedin_link'],
                 }
                 cur.execute("""
-                    INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category)
-                    VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s)
+                    INSERT INTO channels (channel_id, channel_name, subscriber_count, creation_date, emails, phone_numbers, description, category, instagram_link, twitter_link, linkedin_link)
+                    VALUES (%(channel_id)s, %(channel_name)s, %(subscriber_count)s, %(creation_date)s, %(emails)s, %(phone_numbers)s, %(description)s, %(category)s, %(instagram_link)s, %(twitter_link)s, %(linkedin_link)s)
                     ON CONFLICT (channel_id) DO NOTHING;
                 """, channel_info)
 
