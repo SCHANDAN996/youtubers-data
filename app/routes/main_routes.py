@@ -41,6 +41,8 @@ def search():
         max_channels = int(request.form.get('max_channels', 100))
         require_contact = 'require_contact' in request.form
         
+        # NOTE: Production environments mein threading.Thread ka istemal na karein. 
+        # Iski jagah Celery ya RQ jaisa Task Queue istemal karein.
         search_thread = threading.Thread(
             target=youtube_service.find_channels,
             args=(category, start_date, min_subs, max_subs, max_channels, require_contact)
@@ -54,10 +56,29 @@ def search():
         flash(f"An error occurred while starting the search: {e}", "error")
         return redirect(url_for('main.index'))
 
+# SUDHAR: update_video_counts route ko implement kiya gaya hai
 @main_bp.route('/update-video-counts', methods=['POST'])
 def update_video_counts():
-    flash("Update video counts feature is not fully implemented yet.", "info")
-    return jsonify({'success': False, 'message': 'Feature not implemented'})
+    try:
+        data = request.get_json()
+        channel_ids = data.get('channel_ids', [])
+        
+        if not channel_ids:
+            return jsonify({'success': False, 'message': 'No channels selected.'})
+
+        # NOTE: Production environments mein threading.Thread ka istemal na karein. 
+        # Iski jagah Celery ya RQ jaisa Task Queue istemal karein.
+        update_thread = threading.Thread(
+            target=youtube_service.update_video_counts,
+            args=(channel_ids,)
+        )
+        update_thread.start()
+
+        return jsonify({'success': True, 'message': f'Update job started for {len(channel_ids)} channels.'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @main_bp.route('/loading')
 def loading():
@@ -75,6 +96,7 @@ def results():
     search_query = request.args.get('query', '').strip()
     filter_category = request.args.get('category_filter', '').strip()
 
+    # SUDHAR: instagram_link, twitter_link, linkedin_link ko select kiya gaya hai
     sql_query = "SELECT channel_id, channel_name, subscriber_count, category, emails, phone_numbers, instagram_link, twitter_link, linkedin_link, status, short_videos_count, long_videos_count, retrieved_at FROM channels"
     
     where_clauses, params = [], {}
@@ -94,6 +116,7 @@ def results():
     if sort_order.upper() not in ['ASC', 'DESC']:
         sort_order = 'DESC'
         
+    # SQL Injection risk ko kam karne ke liye sort by ko sanitize kiya gaya hai
     sql_query += f" ORDER BY {sort_by} {sort_order}"
     
     cur.execute(sql_query, params)
